@@ -7,15 +7,17 @@ parser.add_argument('-i', '--input', help='''Input file, ( should be in ./videos
                                              input file is vid.mp4, the path ./videos/input/vid.mp4 should
                                              exist.''')
 parser.add_argument('-o', '--output', help='Output file name, will be saved to ./videos/output/<output_file>')
+parser.add_argument('-j', '--joints', help='Name of numpy array where 3d joints will be stored')
 
 if len(sys.argv) == 1:  # If no arguments supplied, defaults to help message
     parser.print_help(sys.stderr)
     sys.exit(1)
 
-args = parser.parse_args()
-input_file = args.input
+args        = parser.parse_args()
+input_file  = args.input
 output_file = args.output
-ext = input_file.split('.')[-1]  # extension of input_file 
+joints      = args.joints
+ext         = input_file.split('.')[-1]  # extension of input_file 
 
 if os.getcwd().split('/')[-1] != 'yoga-pose':
     raise Exception('Ensure that you are running this script from the yoga-pose root directory')
@@ -51,4 +53,4 @@ os.system('python run.py -d custom -k myvideos -arc 3,3,3,3,3 -c checkpoint \
                          --evaluate pretrained_h36m_detectron_coco.bin \
                          --render --viz-subject {} --viz-action custom \
                          --viz-camera 0 --viz-video ../videos/input/{} --viz-output ../videos/output/{} \
-                         --viz-size 6'.format(input_file, input_file, output_file))
+                         --viz-size 6 --viz-export {}'.format(input_file, input_file, output_file, '../joints.npy'))
