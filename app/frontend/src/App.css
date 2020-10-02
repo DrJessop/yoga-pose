@@ -1,0 +1,92 @@
+
+.yoga-vid {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+}
+
+.vid-text { 
+position: fixed;
+bottom: 50%;
+background: rgba(0, 0, 0, 0.4);
+color: #f1f1f1;
+width: 100%;
+padding: 20px;
+}
+
+.left {
+  list-style: none;
+  float: left;
+  padding-left: 5%;
+}
+
+.wld {
+  width: 10%;
+  height: 10%;
+}
+
+.right {
+  list-style: none;
+  float: right;
+  padding-right: 5%;
+  padding-top: 1%;
+}
+
+.right-text {
+  color: black;
+  text-decoration: none;
+}
+
+.right-text:hover {
+  color: blue;
+}
+
+.home-instructions-header {
+  size: 5%;
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+}
+
+.home-instructions-steps {
+  list-style: none;
+  margin-left: auto;
+  margin-right: auto;
+  display: inline-block;
+  padding-left: 20%;
+}
+
+.registration-form {
+  padding-top: 7%;
+  padding-left: 33%;
+  /*display: inline-block;*/
+}
+
+.registration-info {
+  max-width: 66%;
+}
+
+label {
+  margin-top: 2%;
+}
+
+input {
+  width: 50%;
+}
+
+.submit {
+  width: 20%;
+}
+
+.about {
+  padding-top: 7%;
+  margin-left: 33%;
+  margin-right: 33%;
+}
+
+.upload {
+  padding-top: 7%;
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+}
