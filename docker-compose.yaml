@@ -1,0 +1,29 @@
+version: '3.7'
+services:
+  web:
+    build:
+     context: .
+     dockerfile: web.Dockerfile
+    env_file: .env
+    depends_on:
+      - db
+    ports:
+      - "5000:5000"
+    stdin_open: true
+  # On a machine without a GPU, comment out lines device_requests, capabilities, gpu
+  worker:
+    # device_requests:
+    # - capabilities:
+    #   - "gpu"    
+    build:
+      context: .
+      dockerfile: server.Dockerfile
+    env_file: .env
+    depends_on:
+      - db
+  db:
+   image: postgres:latest
+   env_file: .env
+  redis:
+   image: redis:alpine
+   command: redis-server --save ""  
