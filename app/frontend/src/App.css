@@ -12,6 +12,7 @@ background: rgba(0, 0, 0, 0.4);
 color: #f1f1f1;
 width: 100%;
 padding: 20px;
+font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;;
 }
 
 .left {
@@ -34,11 +35,11 @@ padding: 20px;
 
 .right-text {
   color: black;
-  text-decoration: none;
 }
 
 .right-text:hover {
-  color: blue;
+  color: green;
+  text-decoration: none;
 }
 
 .home-instructions-header {
@@ -46,6 +47,7 @@ padding: 20px;
   margin-left: auto;
   margin-right: auto;
   display: block;
+  font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;;
 }
 
 .home-instructions-steps {
@@ -84,9 +86,14 @@ input {
   margin-right: 33%;
 }
 
-.upload {
-  padding-top: 7%;
-  margin-left: auto;
-  margin-right: auto;
-  display: block;
+.upload_instructions li {
+  padding-top: 3%;
+  text-align: center;
+  list-style-position: inside;
+  font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
 }
+
+ul a {
+  text-decoration: none;
+}
+
