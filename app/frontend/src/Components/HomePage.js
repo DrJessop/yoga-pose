@@ -10,7 +10,7 @@ const HomePage = () => {
             <video id='yoga-vid' className='yoga-vid' muted autoPlay loop>
                 <source src={yoga_output} type='video/mp4' />
             </video>
-            <center><p className='vid-text'>Flow with Vinyasa.ai</p></center>
+            <center><p className='vid-text'>Find your flow</p></center>
             <TrackVisibility className='instructions'>
                 {({ isVisible }) => isVisible && <div className="animate__animated animate__fadeInUp"><HomeInstructions/></div>}
             </TrackVisibility>
