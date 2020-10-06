@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+from loguru import logger
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-i', '--input', help='''Input file, ( should be in ./videos/input/ ). ex. If your 
@@ -30,13 +31,14 @@ if 'VideoPose3D' not in os.listdir():
 os.chdir('VideoPose3D')
 
 if 'pretrained_h36m_detectron_coco.bin' not in os.listdir('checkpoint'):
-   raise Exception('You must first install the checkpoint model! See {} for download link.'.format(
-        'https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md#step-1-setup'
+    raise Exception('You must first install the checkpoint model! See {} for download link.'.format(
+        'https://dl.fbaipublicfiles.com/video-pose-3d/pretrained_h36m_detectron_coco.bin'
        )
-   )
+    )
 
 # Keypoint detection
 os.chdir('inference')
+logger.info('Beginning keypoint detection')
 os.system('python infer_video_d2.py \
     --cfg COCO-Keypoints/keypoint_rcnn_R_101_FPN_3x.yaml \
     --output-dir ../npz \
@@ -45,10 +47,12 @@ os.system('python infer_video_d2.py \
 
 # Dataset preparation
 os.chdir('../data')
+logger.info('Beginning 2D dataset preparation')
 os.system('python prepare_data_2d_custom.py -i ../npz -o myvideos')
 
 # 3D reconstruction via back-projection
 os.chdir('..')
+logger.info('Beginning 3D reconstruction')
 os.system('python run.py -d custom -k myvideos -arc 3,3,3,3,3 -c checkpoint \
                          --evaluate pretrained_h36m_detectron_coco.bin \
                          --render --viz-subject {} --viz-action custom \
