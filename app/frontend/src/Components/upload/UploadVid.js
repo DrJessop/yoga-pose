@@ -57,35 +57,46 @@ class MyDropzone extends Component{
     document.getElementById('file2_upload').innerHTML = acceptedFile[0].path;
   }
 
+  successful_upload = () => {
+    document.getElementById('submit_message').innerHTML = `Upload successful. Go to the videos tab to see results 
+                                                           or upload more videos here.`;
+    document.getElementById('file1_upload').innerHTML = '';
+    document.getElementById('file2_upload').innerHTML = '';
+    this.setState({f1: null, f2: null});
+  }
+
   submit = function() {
 
-    var null_files = false;
-    if (this.state.f1 === null) {
-      document.getElementById('file1_upload').innerHTML = 'You must submit an instructor video';
-      null_files = true;
+    if (this.state.f1 === null || this.state.f2 === null) {
+      if (this.state.f1 === null) {
+        document.getElementById('file1_upload').innerHTML = 'You must submit an instructor video';
+      }
+      if (this.state.f2 === null) {
+        document.getElementById('file2_upload').innerHTML = 'You must submit a student video';
+      }
+      document.getElementById('submit_message').innerHTML = '';
+      return;
     }
-    if (this.state.f2 === null) {
-      document.getElementById('file2_upload').innerHTML = 'You must submit a student video';
-      null_files = true;
-    }
 
-    if (!null_files) {
+    let instructor = this.state.f1;
+    let student    = this.state.f2;
 
-      let instructor = this.state.f1;
-      let student    = this.state.f2;
+    const time_ext = (new Date).getTime().toString() + '.mp4';
+    let instructor_fname = 'student_' + time_ext;
+    let student_fname    = 'instructor_' + time_ext;
 
-      const form_data = new FormData();
+    const form_data = new FormData();
 
-      form_data.append('instructor', instructor);
-      form_data.append('student', student);
+    form_data.append('instructor', instructor, instructor_fname);
+    form_data.append('student', student, student_fname);
 
-      fetch('http://127.0.0.1:5000/upload_video', {
-        method: 'POST',
-        body: form_data,
-      }).then(response => response.json())
-        .then(response => console.log(response));
-    }
-  
+    fetch('http://127.0.0.1:5000/upload_video', {
+      method: 'POST',
+      body: form_data
+    }).then(response => response.json())
+      .then(response => console.log(response))
+      .then(this.successful_upload);
+
   }
 
   render() {
@@ -118,12 +129,12 @@ class MyDropzone extends Component{
             <p id='file2_upload' />
             </li>
             <li>
-              Click submit button and we will then process your video
+              Click the submit button and we will then process your video
               <div>
                 <Button id='submit_button' size='lg' onClick={this.submit.bind(this)}>
                   Submit
                 </Button>
-                <p id='submit_message' style={{paddingTop:'3%', color: 'red'}} />
+                <p id='submit_message' style={{paddingTop:'3%', color: 'black'}} />
               </div>
                 
             </li>
