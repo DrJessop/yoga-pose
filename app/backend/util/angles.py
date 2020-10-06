@@ -1,13 +1,15 @@
 import torch
 
 def angle_between(t1, t2, round_tensor=False):
-    norm1 = torch.norm(t1, dim=2).unsqueeze(-1)
-    norm2 = torch.norm(t2, dim=2).unsqueeze(-1)
+    norm1   = torch.norm(t1, dim=2).unsqueeze(-1)
+    norm2   = torch.norm(t2, dim=2).unsqueeze(-1)
     unit_t1 = torch.div(t1, norm1)
     unit_t2 = torch.transpose(torch.div(t1, norm2), 2, 1)
-    angles = torch.bmm(unit_t1, unit_t2).clamp(-1, 1).acos()
+    angles  = torch.bmm(unit_t1, unit_t2).clamp(-1, 1).acos()
+    
     if round_tensor:
         angles = torch.round(angles)
+    
     return angles
 
 def ang_comp(reference, student, round_tensor=False):
@@ -23,17 +25,10 @@ def ang_comp(reference, student, round_tensor=False):
 
     angles = torch.cat([pelvis_rhip, rhip_rknee, rknee_rankle, 
                         pelvis_lhip, lhip_lknee, lknee_lankle, 
-                        pelvis_spine], axis=0)
+                        pelvis_spine], axis=1)
 
     return angles
 
-def performance(angle_tensor):
-    absolute_error = angle_tensor[:].sum()
+def error(angle_tensor):
+    absolute_error = angle_tensor.sum(dim=1).view(-1)
     return absolute_error
-
-if __name__ == '__main__':
-    import numpy as np
-    array = np.load('../joints/joints.npy')
-    tensor = torch.from_numpy(array)
-    angles = ang_comp(tensor, tensor, round_tensor=True)
-    print(performance(angles))
