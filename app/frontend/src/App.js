@@ -34,6 +34,19 @@ class App extends Component {
         window.addEventListener('load', onLoadColor);
     }
 
+    constructor() {
+        super();
+        this.state = {title: ["Hello"], link: ["TestLink"], date: ["October 9th, 2020"]};
+        this.ref = this;
+    }
+
+    updateCards(title, link, date) {
+        var newtitle = this.state.title.concat(title);
+        var newlink  = this.state.link.concat(link);
+        var newdate  = this.state.date.concat(date);
+        this.setState({title: newtitle, link: newlink, date: newdate});
+    }
+
     render() {
         return (
             <Router>
@@ -49,7 +62,7 @@ class App extends Component {
                         </Link>
                     </li>
                     <li className='right'>
-                        <Link to='/processed_videos' id='videos' className='right-text' onClick={() => active_color('videos')}>
+                        <Link to='/processed_videos' id='videos' className='right-text' onClick={() => active_color('videos')} >
                             Your Videos
                         </Link>
                     </li>
@@ -61,8 +74,10 @@ class App extends Component {
                 </ul>
             <Route exact path='/' component={HomePage} />
             <Route exact path='/meetTheTeam' component={Team} />
-            <Route exact path='/processed_videos' component={ProcessedVideos} />
-            <Route exact path='/upload' component={UploadVid} />
+            <Route exact path='/processed_videos' component={() => <ProcessedVideos title={this.state.title} 
+                                                                                    link={this.state.link}
+                                                                                    date={this.state.date}/>} />
+            <Route exact path='/upload' component={() => <UploadVid updateCards={(title, link, date) => this.updateCards(title, link, date)} />}/>
             </Router>
         );
     }

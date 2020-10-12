@@ -40,7 +40,7 @@ const rejectStyle = {
 
 class MyDropzone extends Component{
 
-  constructor() {
+  constructor(props) {
     super();
     this.state = {f1: null, f2: null};
   }
@@ -58,11 +58,11 @@ class MyDropzone extends Component{
   }
 
   successful_upload = () => {
-    document.getElementById('submit_message').innerHTML = `Upload successful. Go to the videos tab to see results 
-                                                           or upload more videos here.`;
     document.getElementById('file1_upload').innerHTML = '';
     document.getElementById('file2_upload').innerHTML = '';
     this.setState({f1: null, f2: null});
+    document.getElementById('submit_message').innerHTML = `Upload successful. Go to the videos tab to see results 
+                                                           or upload more videos here.`;
   }
 
   submit = function() {
@@ -95,8 +95,8 @@ class MyDropzone extends Component{
       body: form_data
     }).then(response => response.json())
       .then(response => console.log(response))
-      .then(this.successful_upload);
-
+      .then(this.successful_upload())
+      .then(this.props.updateCards("1", "2", "3"));
   }
 
   render() {

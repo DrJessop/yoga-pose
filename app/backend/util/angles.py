@@ -1,4 +1,5 @@
 import torch
+import pypcd
 
 def angle_between(t1, t2, round_tensor=False):
     norm1   = torch.norm(t1, dim=2).unsqueeze(-1)
@@ -15,13 +16,13 @@ def angle_between(t1, t2, round_tensor=False):
 def ang_comp(reference, student, round_tensor=False):
     angles = angle_between(reference, student, round_tensor)
     
-    pelvis_rhip  = angles[:, 0, 1]
-    rhip_rknee   = angles[:, 1, 2]
-    rknee_rankle = angles[:, 2, 3]
-    pelvis_lhip  = angles[:, 0, 4]
-    lhip_lknee   = angles[:, 4, 5]
-    lknee_lankle = angles[:, 5, 6]
-    pelvis_spine = angles[:, 0, 7]
+    pelvis_rhip  = angles[:, 0, 1].unsqueeze(1)
+    rhip_rknee   = angles[:, 1, 2].unsqueeze(1)
+    rknee_rankle = angles[:, 2, 3].unsqueeze(1)
+    pelvis_lhip  = angles[:, 0, 4].unsqueeze(1)
+    lhip_lknee   = angles[:, 4, 5].unsqueeze(1)
+    lknee_lankle = angles[:, 5, 6].unsqueeze(1)
+    pelvis_spine = angles[:, 0, 7].unsqueeze(1)
 
     angles = torch.cat([pelvis_rhip, rhip_rknee, rknee_rankle, 
                         pelvis_lhip, lhip_lknee, lknee_lankle, 
