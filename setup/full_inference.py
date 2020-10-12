@@ -1,6 +1,8 @@
 import os
+import subprocess
 import sys
 import argparse
+
 from loguru import logger
 
 parser = argparse.ArgumentParser()
@@ -38,23 +40,34 @@ if 'pretrained_h36m_detectron_coco.bin' not in os.listdir('checkpoint'):
 
 # Keypoint detection
 os.chdir('inference')
-logger.info('Beginning keypoint detection')
-os.system('python infer_video_d2.py \
-    --cfg COCO-Keypoints/keypoint_rcnn_R_101_FPN_3x.yaml \
-    --output-dir ../npz \
-    --image-ext {} \
-    ../../videos/input/'.format(ext))
+logger.info('Beginning keypoint detection in directory {}'.format(os.getcwd()))
+try:
+    subprocess.run(['python3', 'infer_video_d2.py', '--cfg', 'COCO-Keypoints/keypoint_rcnn_R_101_FPN_3x.yaml', 
+                    '--output-dir', '../npz', '--image-ext', ext, '../../videos/input/{}'.format(input_file)], check=True)
+except subprocess.CalledProcessError as e:
+    logger.info(e.output)
+    sys.exit(1)
 
 # Dataset preparation
 os.chdir('../data')
 logger.info('Beginning 2D dataset preparation')
-os.system('python prepare_data_2d_custom.py -i ../npz -o myvideos')
+try:
+    subprocess.run(['python3', 'prepare_data_2d_custom.py', '-i', '../npz', '-o', 'myvideos'], check=True)
+except subprocess.CalledProcessError as e:
+    logger.info(e.output)
+    sys.exit(1)
 
 # 3D reconstruction via back-projection
 os.chdir('..')
 logger.info('Beginning 3D reconstruction')
-os.system('python run.py -d custom -k myvideos -arc 3,3,3,3,3 -c checkpoint \
-                         --evaluate pretrained_h36m_detectron_coco.bin \
-                         --render --viz-subject {} --viz-action custom \
-                         --viz-camera 0 --viz-video ../videos/input/{} --viz-output ../videos/output/{} \
-                         --viz-size 6 --viz-export {}'.format(input_file, input_file, output_file, '../joints.npy'))
+
+try:
+    subprocess.run(['python3', 'run.py', '-d', 'custom', '-k', 'myvideos', '-arc', '3,3,3,3,3', '-c', 'checkpoint',
+                            '--evaluate', 'pretrained_h36m_detectron_coco.bin',
+                            '--render', '--viz-subject', input_file, '--viz-action', 'custom',
+                            '--viz-camera', '0', '--viz-video', '../videos/input/{}'.format(input_file), 
+                            '--viz-output', '../videos/output/{}'.format(output_file),
+                            '--viz-size', '6', '--viz-export', '../joints/{}'.format(joints)], check=True)
+except subprocess.CalledProcessError as e:
+    logger.info(e)
+    sys.exit(1)
