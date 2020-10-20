@@ -47,7 +47,7 @@ Below is a diagram representing the series of steps that need to be performed fo
 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic.png?raw=true)
 
-The main workhorse for this task is the VideoPose3D library<sup><a href='ref1'>1</a></sup>. There is a script in the root folder of this repository called /setup/videopose_setup.py. This script will clone the VideoPose3D repository and install Detectron2<sup>2</sup>. 
+The main workhorse for this task is the VideoPose3D library<sup><a href='#ref1'>1</a></sup>. There is a script in the root folder of this repository called /setup/videopose_setup.py. This script will clone the VideoPose3D repository and install Detectron2<sup>2</sup>. 
 
 ### Flask API
 
