@@ -45,11 +45,14 @@ Additionally, there is a requirements file for all necessary Python modules in a
 In this section, we will be building a REST API backed By VideoPose3D. Pose estimation refers to estimating joint key-points on a subject and connecting them together. In 3D pose estimation, the true depth of the joints is also estimated. By estimating the poses of the student and instructor, we can figure out what adjustments the student needs to make to match the pose of the instructor. 
 Below is a diagram representing the series of steps that need to be performed for student correction.
 
-![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic2.png?raw=true)
-
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic.png?raw=true)
 
-As you
+The main workhorse for this task is the VideoPose3D library<sup><a href='ref1'>1</a></sup>. There is a script in the root folder of this repository called /setup/videopose_setup.py. This script will clone the VideoPose3D repository and install Detectron2<sup>2</sup>. 
+
+### Flask API
+
+
+
 
 This library has an 'in-the-wild' mode that allows users to experiment on their own sample videos. They describe a series of steps that must be undertaken to perform pose estimation, however we will not be expecting the end user to perform those tasks, so we instead need to automate the steps with a python script.
 
@@ -68,10 +71,15 @@ Now that we have built the code that extracts the 3D coordinates, we need to cre
 # Trouble-shoot for detectron2
 Problem with gcc and g++
 
-## Building front-end in React
+## Building frontend in React
 
 
 ## What's Next 
+
+## References 
+<ol>
+  <li><h2 id='ref1'>Reference 1</h2></li>
+</ol>
 
 
 
