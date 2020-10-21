@@ -12,7 +12,7 @@ This tutorial will cover
   <li>React cards</li>
 </ul>
 
-Prior to this tutorial, you should be comfortable with the syntax of
+Prior to this tutorial, you should be comfortable with the syntax of:
 
 <ul>
   <li>Python3+</li>
@@ -127,7 +127,7 @@ def get_overlaps():
     }
 ```
 
-This endpoint is responsible for fetching the result videos from the server.
+This endpoint is responsible for fetching the result videos from the server. 
 
 ### Pose extraction module
 
@@ -188,15 +188,24 @@ def get_error(instructor, student):
     return error
 ```
 
-#### Worker
+#### full_inference.py
 
-The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. In short, VideoPose3D performs 2D keypoint detection (with Detectron2 <sup><a href='#ref2'>2</a></sup>) across all frames of an input video, and then using temporal information between frames of 2D keypoints, does something called 'back-projection which finds the most probable 3D pose given the input video.
+The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. In short, VideoPose3D performs 2D keypoint detection (with Detectron2 <sup><a href='#ref2'>2</a></sup>) across all frames of an input video, and then using temporal information between frames of 2D keypoints, does something called 'back-projection' which finds the most probable 3D pose given the input video.
 
+/* TODO: Have full setup instructions at the very BEGINNING of the tutorial 
 There is a script in the root folder of this repository called /setup/videopose_setup.py. This script will clone the VideoPose3D repository and install Detectron2. Afterwards, the Detectron2 model will have to be downloaded (https://dl.fbaipublicfiles.com/video-pose-3d/pretrained_h36m_detectron_coco.bin) and placed into /YogaPose3D/checkpoint. 
+*/
 
-There are step by step instructions in https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md on how to run VideoPose3D on a sample video, however we need to automate the process using a python script. The script can be seen in https://github.com/DrJessop/yoga-pose/blob/staging/setup/full_inference.py. 
+There are step by step instructions in https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md on how to run VideoPose3D on a sample video, however the process needs to be automated for this app. The script can be seen in https://github.com/DrJessop/yoga-pose/blob/staging/setup/full_inference.py. 
 
-The script is broken into 3 parts.
+This script is broken into four components, in order:
+
+<ol>
+  <li>Imports, loading of files, and exception handling</li>
+  <li>2D keypoint detection using Detectron2</li>
+  <li>Creation of dataset that will be used in 3D keypoint detection</li>
+  <li>3D keypoint detection</li>
+</ol>
 
 ```python
 # Inference script
@@ -275,24 +284,415 @@ except subprocess.CalledProcessError as e:
     sys.exit(1)
 ```
 
+Once complete, a numpy array of 3D keypoints across all frames is created and saved to a file. 
+
 ```python
 # Angles extraction script
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.animation as animation
+import scipy.signal as signal
+import numpy as np
+
+import torch
+from pycpd import RigidRegistration
+
+def angle_between(t1, t2, round_tensor=False):
+    norm1   = torch.norm(t1, dim=2).unsqueeze(-1)
+    norm2   = torch.norm(t2, dim=2).unsqueeze(-1)
+    unit_t1 = torch.div(t1, norm1)
+    unit_t2 = torch.transpose(torch.div(t1, norm2), 2, 1)
+
+    eps = 1e-7
+    cos_angles  = torch.bmm(unit_t1, unit_t2).clamp(-1 + eps, 1 - eps)
+    angles = cos_angles.acos()
+    print(cos_angles)
+    
+    if round_tensor:
+        angles = torch.round(angles)
+    
+    return angles
+
+def ang_comp(reference, student, round_tensor=False):
+    angles = angle_between(reference, student, round_tensor)
+    
+    pelvis_rhip  = angles[:, 0, 1].unsqueeze(1)
+    rhip_rknee   = angles[:, 1, 2].unsqueeze(1)
+    rknee_rankle = angles[:, 2, 3].unsqueeze(1)
+    pelvis_lhip  = angles[:, 0, 4].unsqueeze(1)
+    lhip_lknee   = angles[:, 4, 5].unsqueeze(1)
+    lknee_lankle = angles[:, 5, 6].unsqueeze(1)
+    pelvis_spine = angles[:, 0, 7].unsqueeze(1)
+
+    angles = torch.cat([pelvis_rhip, rhip_rknee, rknee_rankle, 
+                        pelvis_lhip, lhip_lknee, lknee_lankle, 
+                        pelvis_spine], axis=1)
+
+    return angles
+
+def overlap(reference, student):
+
+    assert len(reference) == len(student)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.axis('off')
+    ax.set_xlim3d(-1., 1.)
+    ax.set_ylim3d(-1., 1.)
+    ax.set_zlim3d(0.,  1.)
+
+    scat = ax.scatter([], [], color='red', marker='o') 
+    scat2 = ax.scatter([], [], color = 'blue', marker = 'o')
+
+    iterations = len(reference)
+
+    def update_animation(idx):
+
+        ref_pts = reference[idx]
+        student_pts = student[idx]
+
+        scat._offsets3d = (ref_pts[:, 0], ref_pts[:, 1], ref_pts[:, 2])
+        scat2._offsets3d = (student_pts[:, 0], student_pts[:, 1], student_pts[:, 2])
+    
+    ani    = animation.FuncAnimation(fig, update_animation, iterations,
+                                       interval=50, blit=False, repeat=True)
+    Writer = animation.writers['ffmpeg']
+    writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
+
+    return ani, writer
+
+def error(angle_tensor, window_sz=15):
+    error = angle_tensor.sum(dim=1).view(-1)
+
+    rolling_average = np.convolve(error, np.ones(window_sz,)) / window_sz
+    max_error = rolling_average.max()
+    min_error = rolling_average.min()
+
+    if max_error != min_error:
+        rolling_average = (rolling_average - min_error) / (rolling_average - min_error)  # Normalize error between 0 and 1
+
+    return rolling_average
 
 ```
-
-```python
-# Worker script
-
-```
-
 
 # Trouble-shoot for detectron2
 Problem with gcc and g++
 
 ## Building frontend in React
+Now that the workhorse of the app has been created, the next step is to make a frontend. The frontend should have a homepage, a page for uploading videos, and a page where you can see your processed videos.
 
+### App.js
+In a typical React app, there is a file called App.js that serves as a driver for the program. This file will allow for the rendering of each of the pages, as well as triggering specific methods when the website is loaded. 
+
+```JSX
+import React, { Component } from 'react';
+import wld from './images/wld.jpeg';
+import { BrowserRouter as Router, Link, Route} from 'react-router-dom';
+import HomePage from './Components/HomePage';
+import Team from './Components/Team';
+import UploadVid from './Components/upload/UploadVid';
+import ProcessedVideos from './Components/ProcessedVideos';
+
+import 'animate.css';
+import './App.css';
+
+const ids = ['team', 'videos', 'upload'];
+
+class App extends Component {
+
+    active_color(menu_id) {
+        ids.forEach(id => document.getElementById(id).style.color = 'black');
+        document.getElementById(menu_id).style.color = 'green';
+    }
+    
+    onLoadColor() {
+        if (window.location.href.includes('meetTheTeam')) {
+            document.getElementById('team').style.color = 'green';
+        }
+        else if (window.location.href.includes('processed_videos')) {
+            document.getElementById('videos').style.color = 'green';
+        }
+        else if (window.location.href.includes('upload')) {
+            document.getElementById('upload').style.color = 'green';
+        }
+    }
+
+    updateCardsFromTitle(filePath) {
+        var fileSplit = filePath.split('/');
+        var fileName = fileSplit[fileSplit.length - 1];
+        this.updateCards(fileName, '', 'Oct 12, 2020', filePath);
+    }
+    
+    onLoadCards() {
+        fetch('http://127.0.0.1:5000/get_overlaps')
+          .then(response => response.json())
+          .then(response => JSON.parse(response.files).forEach(file => this.updateCardsFromTitle(file)));
+    }
+    
+    onLoad() {
+        this.onLoadColor();
+        this.onLoadCards();
+    }
+
+    componentDidMount() {
+        window.addEventListener('load', this.onLoad());
+    }
+
+    constructor() {
+        super();
+        this.state = {title: [], link: [], date: [], path: []};
+    }
+
+    updateCards(title, link, date, path) {
+        var newtitle = this.state.title.concat(title);
+        var newlink  = this.state.link.concat(link);
+        var newdate  = this.state.date.concat(date);
+        var newpath  = this.state.path.concat(path)
+        this.setState({title: newtitle, link: newlink, date: newdate, path: newpath});
+        console.log(this.state);
+    }
+
+    render() {
+        return (
+            <Router>
+                <ul id='home-menu' className='home-menu'>
+                    <li className='left'>
+                        <Link id='logo' to='/' onClick={() => this.active_color('logo')}>
+                            <img src={wld} className='wld'/>
+                        </Link>
+                    </li>
+                    <li className='right'>
+                        <Link to='/meetTheTeam' id='team' className='right-text' onClick={() => this.active_color('team')}>
+                            Meet the team
+                        </Link>
+                    </li>
+                    <li className='right'>
+                        <Link to='/processed_videos' id='videos' className='right-text' onClick={() => this.active_color('videos')} >
+                            Your Videos
+                        </Link>
+                    </li>
+                    <li className='right'>
+                        <Link to='/upload' id='upload' className='right-text' onClick={() => this.active_color('upload')}>
+                            Upload
+                        </Link>
+                    </li>
+                </ul>
+            <Route exact path='/' component={HomePage} />
+            <Route exact path='/meetTheTeam' component={Team} />
+            <Route exact path='/processed_videos' component={() => <ProcessedVideos title={this.state.title} 
+                                                                                    link={this.state.link}
+                                                                                    date={this.state.date}
+                                                                                    path={this.state.path}/>} />
+            <Route exact path='/upload' component={() => <UploadVid updateCards={(title, link, date, path) => 
+                                                                                    this.updateCards(title, link, date, path)} />}/>
+            </Router>
+        );
+    }
+}
+
+export default App;
+```
+
+### Home page
+
+### 'Video upload' page
+```JSX
+import React, {Component, useCallback, useMemo, useState} from 'react';
+
+import Dropzone, {useDropzone} from 'react-dropzone';
+import Button from 'react-bootstrap/Button';
+
+/* CSS 3rd party imports */
+import '../../../node_modules/bootstrap/dist/css/bootstrap.min.css';
+
+
+const baseStyle = {
+  flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  padding: '20px',
+  marginLeft: '10%',
+  marginRight: '13%',
+  cursor: 'pointer',
+  borderWidth: 2,
+  borderRadius: 2,
+  borderColor: '#eeeeee',
+  borderStyle: 'dashed',
+  backgroundColor: '#fafafa',
+  color: '#bdbdbd',
+  outline: 'none',
+  transition: 'border .24s ease-in-out'
+};
+
+const activeStyle = {
+  borderColor: '#2196f3'
+};
+
+const acceptStyle = {
+  borderColor: '#00e676'
+};
+
+const rejectStyle = {
+  borderColor: '#ff1744'
+};
+
+class MyDropzone extends Component{
+
+  constructor(props) {
+    super();
+    this.state = {f1: null, f2: null};
+  }
+
+  on_drop1 = (acceptedFile) => {
+    this.setState({f1: acceptedFile[0], f2: this.state.f2});
+    console.log(this.state);
+    document.getElementById('file1_upload').innerHTML = acceptedFile[0].path;
+  }
+
+  on_drop2 = (acceptedFile) => {
+    this.setState({f1: this.state.f1, f2: acceptedFile[0]});
+    console.log(this.state);
+    document.getElementById('file2_upload').innerHTML = acceptedFile[0].path;
+  }
+
+  successful_upload = () => {
+    document.getElementById('file1_upload').innerHTML = '';
+    document.getElementById('file2_upload').innerHTML = '';
+    this.setState({f1: null, f2: null});
+    document.getElementById('submit_message').innerHTML = `Upload successful. Go to the videos tab to see results 
+                                                           or upload more videos here.`;
+  }
+
+  submit = function() {
+
+    if (this.state.f1 === null || this.state.f2 === null) {
+      if (this.state.f1 === null) {
+        document.getElementById('file1_upload').innerHTML = 'You must submit an instructor video';
+      }
+      if (this.state.f2 === null) {
+        document.getElementById('file2_upload').innerHTML = 'You must submit a student video';
+      }
+      document.getElementById('submit_message').innerHTML = '';
+      return;
+    }
+
+    let instructor = this.state.f1;
+    let student    = this.state.f2;
+    let date       = new Date;
+
+    const time_ext = date.getTime().toString() + '.mp4';
+    let instructor_fname = 'student_' + time_ext;
+    let student_fname    = 'instructor_' + time_ext;
+
+    const form_data = new FormData();
+
+    form_data.append('instructor', instructor, instructor_fname);
+    form_data.append('student', student, student_fname);
+
+    fetch('http://127.0.0.1:5000/upload_video', {
+      method: 'POST',
+      body: form_data
+    }).then(response => response.json())
+      .then(response => console.log(response))
+      .then(this.successful_upload())
+      .then(this.props.updateCards(instructor_fname + ' ' + student_fname, "in progress", date.getDate()));
+  }
+
+  render() {
+    return (
+      <div>
+        <ol className='upload_instructions'>
+            <li style={{paddingTop:'7%'}}>
+              Drag and drop a video of your favourite instructor's class
+              
+              <Dropzone onDrop={this.on_drop1} accept='video/mp4' multiple={false}>
+                {({getRootProps, getInputProps}) => (
+                  <div {...getRootProps()} style={baseStyle}>
+                    <input {...getInputProps()} />
+                    Drop file here
+                  </div>
+                )}
+              </Dropzone>
+              <p id='file1_upload' />
+            </li>
+            <li>
+              Drag and drop a video of a student following the instructor's class
+              <Dropzone onDrop={this.on_drop2} accept='video/mp4' multiple={false}>
+              {({getRootProps, getInputProps}) => (
+                <div {...getRootProps()} style={baseStyle}>
+                  <input {...getInputProps()} />
+                  Drop file here
+                </div>
+              )}
+            </Dropzone>
+            <p id='file2_upload' />
+            </li>
+            <li>
+              Click the submit button and we will then process your video
+              <div>
+                <Button id='submit_button' size='lg' onClick={this.submit.bind(this)}>
+                  Submit
+                </Button>
+                <p id='submit_message' style={{paddingTop:'3%', color: 'black'}} />
+              </div>
+                
+            </li>
+        </ol>
+      </div>
+    );
+  }
+}
+
+export default MyDropzone;
+```
+
+### 'Your videos' page
+```JSX
+import React from 'react';
+import Card from 'react-bootstrap/Card';
+
+import '../../node_modules/bootstrap/dist/css/bootstrap.min.css';
+
+const ProcessedVideos = (props) => {
+
+    var html = [];
+    console.log(props);
+    for (var idx = 0; idx < props.title.length; idx++) {
+        html.push(
+        <div id={idx} style={{padding:'7%'}}>
+            <Card>
+                <Card.Header>{props.title[idx]}</Card.Header>
+                <Card.Body>
+                    <blockquote className="blockquote mb-0">
+                    <p>
+                    <video muted controls className='videos'>
+                        <source src={props.path[idx]} type='video/mp4' />
+                    </video>
+                    </p>
+                    <footer className="blockquote-footer">
+                        {props.date[idx]}
+                    </footer>
+                    </blockquote>
+                </Card.Body>
+            </Card>
+        </div>);
+    }
+
+    return (
+        <div>
+            {html}
+        </div>
+    );
+}
+
+export default ProcessedVideos;
+```
 
 ## What's Next 
+- Real-time application
+- Segmentation of video using yoga pose classification
+- Rotation of limbs
 
 ## References 
 <ol>
