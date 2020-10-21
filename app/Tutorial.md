@@ -100,7 +100,7 @@ if __name__ == '__main__':
     worker.work()
 ```
 
-This file is necessary for establishing a separate worker thread for the flask app. When the client submits a request to 
+This file is necessary for establishing a separate worker thread for the flask app. When the client submits a request to the backend, the Flask app then calls the worker thread to perform a job to prevent the Flask app from blocking.
 
 ### Flask API
 In this part of the tutorial, the different components of the Flask app will be discussed.
@@ -137,8 +137,6 @@ def send_static(path):
 def get_overlaps():
     ...
 ```
-
-
 
 #### upload_video
 
@@ -389,7 +387,9 @@ except subprocess.CalledProcessError as e:
 Once complete, a numpy array of 3D keypoints across all frames is created and saved to a file. 
 
 ### angle extraction
+Now that we have the 3D keypoints across all frames, we can create a module for correcting the student's pose in reference to an instructor. 
 
+#### Required imports
 
 ```python
 # Angles extraction script
@@ -404,6 +404,7 @@ from pycpd import RigidRegistration
 ...
 ```
 
+#### Angle between
 ```python
 def angle_between(t1, t2, round_tensor=False):
     norm1   = torch.norm(t1, dim=2).unsqueeze(-1)
@@ -422,6 +423,15 @@ def angle_between(t1, t2, round_tensor=False):
     return angles
 ...
 ```
+
+This function computes the angles between two torch tensors. From elementary linear algebra, we know that 
+
+cos_theta = dot(a,b)/|a||b|
+
+Therefore, by normalizing each tensor, |t1||t2| = 1. So, in this case cos_theta = dot(a,b), and theta = arcos(a,b).
+
+
+#### Getting required angles
 ```python
 def ang_comp(reference, student, round_tensor=False):
     angles = angle_between(reference, student, round_tensor)
@@ -441,6 +451,9 @@ def ang_comp(reference, student, round_tensor=False):
     return angles
 ...
 ```
+
+COME BACK TO THIS, because need to do angle_between(reference, reference) and student, student so that I can compare adjacent angles. 
+
 ```python
 def overlap(reference, student):
 
@@ -474,6 +487,8 @@ def overlap(reference, student):
     return ani, writer
 ...
 ```
+This function returns an animation object which overlays the student and instructor coordinates, as well as a writer to write to disk.
+
 ```python
 def error(angle_tensor, window_sz=15):
     error = angle_tensor.sum(dim=1).view(-1)
@@ -488,9 +503,10 @@ def error(angle_tensor, window_sz=15):
     return rolling_average
 ```
 
+Given the difference in error in adjacent angles, computes a rolling average across all frames to remove any anomalies. This will be used to create a heatmap to the frontend of areas where they need to improve and areas where they did well. 
+
 ## Building frontend in React
 Now that the workhorse of the app has been created, the next step is to make a frontend. The frontend should have a homepage, a page for uploading videos, and a page where you can see your processed videos. 
-
 
 ### App.js
 In a typical React app, there is a file called App.js that serves as a driver for the program. This file will allow for the rendering of each of the pages, as well as triggering specific methods when the website is loaded. App.js will contain a class called App which extends the React Component class. 
