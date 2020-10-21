@@ -489,10 +489,13 @@ def error(angle_tensor, window_sz=15):
 ```
 
 ## Building frontend in React
-Now that the workhorse of the app has been created, the next step is to make a frontend. The frontend should have a homepage, a page for uploading videos, and a page where you can see your processed videos.
+Now that the workhorse of the app has been created, the next step is to make a frontend. The frontend should have a homepage, a page for uploading videos, and a page where you can see your processed videos. 
+
 
 ### App.js
-In a typical React app, there is a file called App.js that serves as a driver for the program. This file will allow for the rendering of each of the pages, as well as triggering specific methods when the website is loaded. 
+In a typical React app, there is a file called App.js that serves as a driver for the program. This file will allow for the rendering of each of the pages, as well as triggering specific methods when the website is loaded. App.js will contain a class called App which extends the React Component class. 
+
+The code for App.js is below:
 
 ```JSX
 import React, { Component } from 'react';
@@ -602,6 +605,62 @@ class App extends Component {
 
 export default App;
 ```
+
+This piece of code will be broken down one chunk at a time. 
+
+In the render method of App, JSX code is returned, which looks similar to html, except you can also supply javascript objects. During the build procedure, the React class is used to translate this JSX code into javascript. Any classes that extend Component can be embedded into JSX template. 
+
+```JSX
+    ...
+    render() {
+        return (
+            <Router>
+                <ul id='home-menu' className='home-menu'>
+                    <li className='left'>
+                        <Link id='logo' to='/' onClick={() => this.active_color('logo')}>
+                            <img src={wld} className='wld'/>
+                        </Link>
+                    </li>
+                    <li className='right'>
+                        <Link to='/meetTheTeam' id='team' className='right-text' onClick={() => this.active_color('team')}>
+                            Meet the team
+                        </Link>
+                    </li>
+                    <li className='right'>
+                        <Link to='/processed_videos' id='videos' className='right-text' onClick={() => this.active_color('videos')} >
+                            Your Videos
+                        </Link>
+                    </li>
+                    <li className='right'>
+                        <Link to='/upload' id='upload' className='right-text' onClick={() => this.active_color('upload')}>
+                            Upload
+                        </Link>
+                    </li>
+                </ul>
+            <Route exact path='/' component={HomePage} />
+            <Route exact path='/meetTheTeam' component={Team} />
+            <Route exact path='/processed_videos' component={() => <ProcessedVideos title={this.state.title} 
+                                                                                    link={this.state.link}
+                                                                                    date={this.state.date}
+                                                                                    path={this.state.path}/>} />
+            <Route exact path='/upload' component={() => <UploadVid updateCards={(title, link, date, path) => 
+                                                                                    this.updateCards(title, link, date, path)} />}/>
+            </Router>
+        );
+```
+
+React routers allow for React components to be rendered dynamically. The 'Link' component changes the URL, and the exact path renders each of HomePage, Team, ProcessedVideos, and UploadVid whenever the URL path matches the specified path exactly. 
+
+```JSX
+    ...
+    constructor() {
+        super();
+        this.state = {title: [], link: [], date: [], path: []};
+    }
+    ...
+```
+
+'state' is a special attribute for React components that contains useful attributes that the class should have. Calling the setState method on a React class will trigger a re-rendering phase that you would not get if you tried to set the state yourself. 
 
 ### Home page
 
@@ -758,6 +817,9 @@ export default MyDropzone;
 ```
 
 ### 'Your videos' page
+
+The 'Your videos' page should contain cards that show the resultant job that is processed, as well as unique filename identifier and the date that the job was created. Below is the code snippet:
+
 ```JSX
 import React from 'react';
 import Card from 'react-bootstrap/Card';
@@ -798,6 +860,8 @@ const ProcessedVideos = (props) => {
 
 export default ProcessedVideos;
 ```
+
+This file is supplied with a props parameter which is an object with three parameters: title, path, and date. Title stores the name that the user chose for the card name, the path is the path to the source video, and date is the date that the job was created. 
 
 ## What's Next 
 - Real-time application
