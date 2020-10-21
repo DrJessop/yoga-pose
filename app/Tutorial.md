@@ -47,7 +47,11 @@ Below is a diagram representing the series of steps that need to be performed fo
 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic.png?raw=true)
 
-The main workhorse for this task is the VideoPose3D library<sup><a href='#ref1'>1</a></sup>. There is a script in the root folder of this repository called /setup/videopose_setup.py. This script will clone the VideoPose3D repository and install Detectron2<sup>2</sup>. 
+The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. In short, VideoPose3D performs 2D keypoint detection (with Detectron2 <sup><a href='#ref2'>2</a></sup>) across all frames of an input video, and then using temporal information between frames of 2D keypoints, does something called 'back-projection which finds the most probable 3D pose given the input video.
+
+There is a script in the root folder of this repository called /setup/videopose_setup.py. This script will clone the VideoPose3D repository and install Detectron2. Afterwards, the Detectron2 model will have to be downloaded (https://dl.fbaipublicfiles.com/video-pose-3d/pretrained_h36m_detectron_coco.bin) and placed into /YogaPose3D/checkpoint. 
+
+Once this is complete, the next step is to BUILD INFERENCE SCRIPT.
 
 ### Flask API
 
