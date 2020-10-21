@@ -50,10 +50,6 @@ Below is a diagram representing the architecture of the backend and its relation
 
 Gunicorn is a WSGI server that is the method in which the frontend will commute with the Flask API. The backend will receive a put request with two video files (student and instructor), afterwhich a REDIS queue will launch a job to be performed by a worker thread. 
 
-The pose extraction worker has the following architecture:
-
-![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic.png?raw=true)
-
 ### Flask API
 This section will describe creating the endpoints for the Flask API. There are three endpoints:
 
@@ -133,7 +129,66 @@ def get_overlaps():
 
 This endpoint is responsible for fetching the result videos from the server.
 
-### Utility functions
+### Pose extraction module
+
+Now that the Flask API has been created, the next step is to create the 'pose_extraction' module that contains all the useful functions necessary for obtaining the poses of the instructor and student, returning the error between instructor and student, student correction, and video generation.
+
+The 'pose_extraction' worker function executes the following steps:
+
+![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic.png?raw=true)
+
+More specifically, in code:
+
+```python
+def get_error(instructor, student):
+
+    logger.info('Beginning process with instructor {} and student {}'.format(instructor, student))
+
+    cur_dir = os.getcwd()
+
+    main_dir = '../../'
+    os.chdir(main_dir)
+
+    logger.info('Beginning instructor inference')
+    try:
+        subprocess.run(['python3', 'setup/full_inference.py', '--input', instructor, '--output', 
+                        'out_instructor.mp4', '--joints', 'joints-{}.npy'.format(instructor.split('.')[0])], check=True)
+    except subprocess.CalledProcessError as e:
+        logger.info(e.output)
+        sys.exit(1)
+    logger.info('Finished instructor inference')
+
+    logger.info('Beginning student inference')
+    try:
+        subprocess.run(['python3', 'setup/full_inference.py', '--input', student, '--output', 
+                        'out_student.mp4', '--joints', 'joints-{}.npy'.format(student.split('.')[0])], check=True)
+    except subprocess.CalledProcessError as e:
+        logger.info(e.output)
+        sys.exit(1)
+    logger.info('Finished student inference')
+
+    instructor_pose = np.load('./joints/joints-{}.npy'.format(instructor.split('.')[0]))
+    student_pose    = np.load('./joints/joints-{}.npy'.format(student.split('.')[0]))
+
+    ani, writer = angles.overlap(instructor_pose, student_pose)
+    instructor = instructor.split('.mp4')[0]
+    student    = student.split('.mp4')[0]
+    ani.save('./app/frontend/public/videos/{}-{}.mp4'.format(instructor, student), writer=writer)
+    
+    instructor_pose = torch.from_numpy(instructor_pose)
+    student_pose    = torch.from_numpy(student_pose)
+    
+    # Run angle comparison code
+    os.chdir(cur_dir)
+    angles_between = angles.ang_comp(instructor_pose, student_pose, round_tensor=True)
+    error = angles.error(angles_between)
+    logger.info('Error {}'.format(error))
+
+    # Create point set 'registration'
+    return error
+```
+
+#### Worker
 
 The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. In short, VideoPose3D performs 2D keypoint detection (with Detectron2 <sup><a href='#ref2'>2</a></sup>) across all frames of an input video, and then using temporal information between frames of 2D keypoints, does something called 'back-projection which finds the most probable 3D pose given the input video.
 
