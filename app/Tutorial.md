@@ -1,21 +1,33 @@
 # Building a Yoga Assistant App with React, Flask, and Pytorch
-During the pandemic, a lot of fitness-related activities went fully online, including yoga. I'm sure many fellow yogis have felt the frustration of not getting feedback on their posture during this time. In this tutorial, you will be building an application that helps correct yoga poses using React, Flask, and Facebook's VideoPose3D. 
+During the pandemic, a lot of fitness-related activities went fully online, including yoga. I'm sure many fellow yogis have felt the frustration of not getting feedback on their posture during this time, which was the motivation for creating this piece of software. In this tutorial, you will be building an application that helps correct yoga poses using React, Flask, and Facebook's VideoPose3D. 
 
-This tutorial will cover 
+In order, this tutorial will cover 
 
-<ul>
-  <li>Redis job queues</li>
-  <li>React routers for different parts of the homepage</li>
-  <li>File uploading and pre-processing in React</li>
-  <li>Websockets</li>
-  <li>React cards</li>
-</ul>
+<ol>
+  <li>Building the backend for the yoga app, which will include...
+    <ol>
+      <li>Creating a Flask app</li>
+      <li>Using REDIS for job queues</li>
+      <li>Using Facebook's VideoPose3D library for performing 3D pose estimation on an instructor and student video</li>
+      <li>Establishing an error function between the student and instructor poses</li>
+    </ol>
+  </li>
+  <li>Building the React frontend, which will include...
+    <ol>
+      <li>Overview of the structure of a React application</li>
+      <li>Using React routers for a single-page application</li>
+      <li>How to upload videos and submit requests to the flask backend</li>
+      <li>How to display processed videos to the screen</li>
+      <li>How to share videos through Facebook messenger platform</li>
+    </ol>
+  </li>
+</ol>
 
-Prior to this tutorial, you should be comfortable with:
+This is a beginner tutorial for <b>React</b> and <b>Pytorch</b>, however there are some pre-requisites. Prior to this tutorial, you should be comfortable with:
 
 <ul>
   <li>Python3+</li>
-  <li>Flask (python module)</li>
+  <li>Flask</li>
   <li>Javascript (optional)</li>
 </ul>
 
@@ -49,25 +61,70 @@ To install, in terminal, run
 python3 -m pip install -r requirements.txt
 ```
 
+### Trouble-shoot for detectron2
+Problem with gcc and g++
+
+### Directory structure
+Below is a diagram of the directory structure of the entire project. Using this structure, create empty files with the following names, as the rest of the tutorial will be referring to these files.
+
+
 ## Building python backend 
 ### Architecture of backend
-In this section, we will be building a Flask API backed By VideoPose3D which will provide the necessary functions to correct a student's pose based off of their instructor. Pose estimation refers to estimating joint key-points on a subject and connecting them together. In 3D pose estimation, the true depth of the joints is also estimated. By estimating the poses of the student and instructor, we can figure out what adjustments the student needs to make to match the pose of the instructor. 
-Below is a diagram representing the architecture of the backend and its relationship to the frontend.
+In this section, you will be building a Flask API backed By VideoPose3D which will provide the necessary functions to correct a student's pose based off of their instructor. Pose estimation refers to estimating joint key-points on a subject and connecting them together. In 3D pose estimation, the true depth of the joints is also estimated. By estimating the poses of the student and instructor, we can figure out what adjustments the student needs to make to match the pose of the instructor. Below is a diagram representing the architecture of the backend and its relationship to the frontend:
 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic2.png?raw=true)
 
 Gunicorn is a WSGI server that is the way in which the frontend will commute with the Flask API. RQ corresponds to a REDIS queue, where REDIS is an in-memory key-value storage system and is an excellent tool for creating job queues (serves users in a FIFO manner). The backend will receive a put request with two video files (student and instructor), afterwhich a REDIS queue will launch a job to be performed by a worker thread. 
 
-### Directory structure of backend
+### Worker thread
+```python
+import os
 
-![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_directory.png?raw=true)
+import redis
+from loguru import logger
+from rq import Worker, Queue, Connection
+
+listen = ['high', 'default', 'low']
+
+redis_url = 'redis://localhost:6379' 
+logger.info('REDIS URL {}'.format(redis_url))
+logger.info('In directory {}'.format(os.getcwd()))
+
+conn = redis.from_url(redis_url)
+
+if __name__ == '__main__':
+  logger.info('__main__')
+  with Connection(conn):
+    worker = Worker(map(Queue, listen))
+    logger.info(f'worker: {worker}')
+    worker.work()
+```
+
+This file is necessary for establishing a separate worker thread for the flask app. When the client submits a request to 
 
 ### Flask API
-In this part of the tutorial, the endpoints for the Flask app will be discussed.
+In this part of the tutorial, the different components of the Flask app will be discussed.
 
-Below are the decorators and headers for each one of the endpoints:
+Below are the top of the file and the decorators and headers for each one of the endpoints:
 
 ```python
+import os
+import json
+
+from flask import (
+    Flask, request, send_from_directory
+)
+from flask_cors import CORS
+from loguru import logger
+from rq import Queue
+from rq.job import Job
+from worker import conn
+
+q = Queue(connection=conn)
+
+app = Flask(__name__)
+CORS(app)  # Cross-origin resource sharing (React app using different port than Flask app)
+
 @app.route('/upload_video', methods=['POST'])
 def upload_video():
     ...
@@ -81,7 +138,7 @@ def get_overlaps():
     ...
 ```
 
-Each one of these endpoints will be broken down separately.
+
 
 #### upload_video
 
@@ -117,8 +174,7 @@ def upload_video():
     }
 ```
 
-When the frontend makes a PUT request to 'upload_video', it sends instructor and student raw video files. rq then creates a new job by invoking the pose extraction.get_error utility function. Since jobs cannot have raw video passsed in as a parameter, the files first need to be written to disk, and then the job can re-read the files later.
-
+When the frontend makes a PUT request to 'upload_video', it sends instructor and student raw video files. rq then creates a new job by invoking the pose extraction.get_error utility function. Since jobs cannot have raw video passsed in as a parameter, the files first need to be written to disk, and then the job can re-read the files later. The 'job_timeout' argument of the q.enqueue method represents the maximum possible time in seconds that the backend has to execute the job. Additionally, a separate worker thread is responsible for executing the job, thus this function can return while the job is processed asynchronously. This allows the Flask app to avoid getting blocked by requests. 
 
 #### send_static
 
@@ -236,6 +292,7 @@ This script is broken into four components, in order:
   <li>3D keypoint detection</li>
 </ol>
 
+##### Parsing video arguments and exception handling
 ```python
 # Inference script
 import os
@@ -277,7 +334,13 @@ if 'pretrained_h36m_detectron_coco.bin' not in os.listdir('checkpoint'):
         'https://dl.fbaipublicfiles.com/video-pose-3d/pretrained_h36m_detectron_coco.bin'
        )
     )
+...
+```
 
+This part of the script reads in the video file (the full path doesn't need to be specified, as they are assumed to be ./videos/input/) as well as the name of the output joints file.
+
+##### Keypoint detection
+```python
 # Keypoint detection
 os.chdir('inference')
 logger.info('Beginning keypoint detection in directory {}'.format(os.getcwd()))
@@ -287,7 +350,13 @@ try:
 except subprocess.CalledProcessError as e:
     logger.info(e.output)
     sys.exit(1)
+...
+```
 
+This part of the script runs the 'infer_video_d2' script, which is a part of VideoPose3D. It takes in the input file and performs 2D keypoint detection.
+
+#### Dataset preparation
+```python
 # Dataset preparation
 os.chdir('../data')
 logger.info('Beginning 2D dataset preparation')
@@ -296,7 +365,11 @@ try:
 except subprocess.CalledProcessError as e:
     logger.info(e.output)
     sys.exit(1)
+...
+```
 
+#### 3D pose estimation
+```python
 # 3D reconstruction via back-projection
 os.chdir('..')
 logger.info('Beginning 3D reconstruction')
@@ -317,6 +390,7 @@ Once complete, a numpy array of 3D keypoints across all frames is created and sa
 
 ### angle extraction
 
+
 ```python
 # Angles extraction script
 import matplotlib.pyplot as plt
@@ -327,7 +401,10 @@ import numpy as np
 
 import torch
 from pycpd import RigidRegistration
+...
+```
 
+```python
 def angle_between(t1, t2, round_tensor=False):
     norm1   = torch.norm(t1, dim=2).unsqueeze(-1)
     norm2   = torch.norm(t2, dim=2).unsqueeze(-1)
@@ -343,7 +420,9 @@ def angle_between(t1, t2, round_tensor=False):
         angles = torch.round(angles)
     
     return angles
-
+...
+```
+```python
 def ang_comp(reference, student, round_tensor=False):
     angles = angle_between(reference, student, round_tensor)
     
@@ -360,7 +439,9 @@ def ang_comp(reference, student, round_tensor=False):
                         pelvis_spine], axis=1)
 
     return angles
-
+...
+```
+```python
 def overlap(reference, student):
 
     assert len(reference) == len(student)
@@ -391,7 +472,9 @@ def overlap(reference, student):
     writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
 
     return ani, writer
-
+...
+```
+```python
 def error(angle_tensor, window_sz=15):
     error = angle_tensor.sum(dim=1).view(-1)
 
@@ -403,11 +486,7 @@ def error(angle_tensor, window_sz=15):
         rolling_average = (rolling_average - min_error) / (rolling_average - min_error)  # Normalize error between 0 and 1
 
     return rolling_average
-
 ```
-
-# Trouble-shoot for detectron2
-Problem with gcc and g++
 
 ## Building frontend in React
 Now that the workhorse of the app has been created, the next step is to make a frontend. The frontend should have a homepage, a page for uploading videos, and a page where you can see your processed videos.
