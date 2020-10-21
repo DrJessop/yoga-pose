@@ -4,23 +4,23 @@ During the pandemic, a lot of fitness-related activities went fully online, incl
 This tutorial will cover 
 
 <ul>
-  <li>Flask endpoints</li>
   <li>Redis job queues</li>
   <li>React routers for different parts of the homepage</li>
   <li>File uploading and pre-processing in React</li>
-  <li>Flask SocketIO</li>
+  <li>Websockets</li>
   <li>React cards</li>
 </ul>
 
-Prior to this tutorial, you should be comfortable with the syntax of:
+Prior to this tutorial, you should be comfortable with:
 
 <ul>
   <li>Python3+</li>
-  <li>Javascript</li>
+  <li>Flask (python module)</li>
+  <li>Javascript (optional)</li>
 </ul>
 
 ## Getting Started
-Before even beginning, you need to install the following:
+Before beginning, you need to install the following:
 <ul>
   <li>node package manager (npm)</li>
   <li>python3+</li>
@@ -39,19 +39,33 @@ brew install node
 #### Linux
 #### Windows
 
-Additionally, there is a requirements file for all necessary Python modules in app/backend and for all necessary npm modules in app/frontened.
+### Required python modules
+
+The requirements file for all necessary Python modules can be found in in app/backend 
+
+To install, in terminal, run
+
+```sh
+python3 -m pip install -r requirements.txt
+```
 
 ## Building python backend 
 ### Architecture of backend
-In this section, we will be building a REST API backed By VideoPose3D. Pose estimation refers to estimating joint key-points on a subject and connecting them together. In 3D pose estimation, the true depth of the joints is also estimated. By estimating the poses of the student and instructor, we can figure out what adjustments the student needs to make to match the pose of the instructor. 
+In this section, we will be building a Flask API backed By VideoPose3D which will provide the necessary functions to correct a student's pose based off of their instructor. Pose estimation refers to estimating joint key-points on a subject and connecting them together. In 3D pose estimation, the true depth of the joints is also estimated. By estimating the poses of the student and instructor, we can figure out what adjustments the student needs to make to match the pose of the instructor. 
 Below is a diagram representing the architecture of the backend and its relationship to the frontend.
 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic2.png?raw=true)
 
-Gunicorn is a WSGI server that is the method in which the frontend will commute with the Flask API. The backend will receive a put request with two video files (student and instructor), afterwhich a REDIS queue will launch a job to be performed by a worker thread. 
+Gunicorn is a WSGI server that is the way in which the frontend will commute with the Flask API. RQ corresponds to a REDIS queue, where REDIS is an in-memory key-value storage system and is an excellent tool for creating job queues (serves users in a FIFO manner). The backend will receive a put request with two video files (student and instructor), afterwhich a REDIS queue will launch a job to be performed by a worker thread. 
+
+### Directory structure of backend
+
+![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_directory.png?raw=true)
 
 ### Flask API
-This section will describe creating the endpoints for the Flask API. There are three endpoints:
+In this part of the tutorial, the endpoints for the Flask app will be discussed.
+
+Below are the decorators and headers for each one of the endpoints:
 
 ```python
 @app.route('/upload_video', methods=['POST'])
@@ -68,6 +82,8 @@ def get_overlaps():
 ```
 
 Each one of these endpoints will be broken down separately.
+
+#### upload_video
 
 ```python
 @app.route('/upload_video', methods=['POST'])
@@ -103,6 +119,9 @@ def upload_video():
 
 When the frontend makes a PUT request to 'upload_video', it sends instructor and student raw video files. rq then creates a new job by invoking the pose extraction.get_error utility function. Since jobs cannot have raw video passsed in as a parameter, the files first need to be written to disk, and then the job can re-read the files later.
 
+
+#### send_static
+
 ```python
 @app.route('/videos/overlaps/<path:path>')
 def send_static(path):
@@ -111,6 +130,8 @@ def send_static(path):
 ```
 
 This endpoint is responsible for serving static files. Since javascript is client-side, it has no way of reading in files on the server, but it can make a get request to be able to fetch video data from the server.
+
+#### get_overlaps
 
 ```python
 @app.route('/get_overlaps', methods=["GET"])
@@ -166,7 +187,13 @@ def get_error(instructor, student):
         logger.info(e.output)
         sys.exit(1)
     logger.info('Finished student inference')
+    ...
+```
 
+This part of the function performs the 'infer keypoints' in the above diagram on the instructor and student. The function is continued in the next block...
+
+```python
+    ...
     instructor_pose = np.load('./joints/joints-{}.npy'.format(instructor.split('.')[0]))
     student_pose    = np.load('./joints/joints-{}.npy'.format(student.split('.')[0]))
 
@@ -188,6 +215,8 @@ def get_error(instructor, student):
     return error
 ```
 
+This part of the function loads the keypoints from memory, creates a video of the best possible overlap between the instructor and student, and then runs the angle comparison code which returns a rolling average error vector between the instructor and student across all frames.
+
 #### full_inference.py
 
 The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. In short, VideoPose3D performs 2D keypoint detection (with Detectron2 <sup><a href='#ref2'>2</a></sup>) across all frames of an input video, and then using temporal information between frames of 2D keypoints, does something called 'back-projection' which finds the most probable 3D pose given the input video.
@@ -196,7 +225,7 @@ The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'
 There is a script in the root folder of this repository called /setup/videopose_setup.py. This script will clone the VideoPose3D repository and install Detectron2. Afterwards, the Detectron2 model will have to be downloaded (https://dl.fbaipublicfiles.com/video-pose-3d/pretrained_h36m_detectron_coco.bin) and placed into /YogaPose3D/checkpoint. 
 */
 
-There are step by step instructions in https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md on how to run VideoPose3D on a sample video, however the process needs to be automated for this app. The script can be seen in https://github.com/DrJessop/yoga-pose/blob/staging/setup/full_inference.py. 
+There are step by step instructions in https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md on how to run VideoPose3D on a sample video, however the process needs to be automated for this app. 
 
 This script is broken into four components, in order:
 
@@ -285,6 +314,8 @@ except subprocess.CalledProcessError as e:
 ```
 
 Once complete, a numpy array of 3D keypoints across all frames is created and saved to a file. 
+
+### angle extraction
 
 ```python
 # Angles extraction script
@@ -698,6 +729,7 @@ export default ProcessedVideos;
 <ol>
   <li><h2 id='ref1'>Reference 1</h2></li>
   <li><h2 id='ref2'>Reference 2</h2></li>
+  <li><h2 id='ref3'>Reference 3</h2></li>
 </ol>
 
 
