@@ -27,8 +27,8 @@ This is a beginner tutorial for <b>React</b> and <b>Pytorch</b>, however there a
 
 <ul>
   <li>Python3+</li>
-  <li>Flask</li>
-  <li>Javascript (optional)</li>
+  <li>Flask (beginner knowledge)</li>
+  <li>Javascript, HTML, and CSS (optional)</li>
 </ul>
 
 ## Getting Started
@@ -53,7 +53,7 @@ brew install node
 
 ### Required python modules
 
-The requirements file for all necessary Python modules can be found in in app/backend 
+The requirements file for all necessary Python modules can be found in in app/backend.
 
 To install, in terminal, run
 
@@ -69,14 +69,65 @@ Below is a diagram of the directory structure of the entire project. Using this 
 
 
 ## Building python backend 
-### Architecture of backend
-In this section, you will be building a Flask API backed By VideoPose3D which will provide the necessary functions to correct a student's pose based off of their instructor. Pose estimation refers to estimating joint key-points on a subject and connecting them together. In 3D pose estimation, the true depth of the joints is also estimated. By estimating the poses of the student and instructor, we can figure out what adjustments the student needs to make to match the pose of the instructor. Below is a diagram representing the architecture of the backend and its relationship to the frontend:
+### Overview
+In this section, you will be building a Flask API backed By VideoPose3D which will provide the necessary functions to correct a student's pose based off of their instructor. 
+
+Pose estimation refers to estimating joint key-points on a subject and connecting them together. In 3D pose estimation, the depth of the joints is also estimated (how far from the camera each joint is). Here is an example of 3D video pose estimation for a yoga clip:
+
+/* Insert GIF of yoga pose estimation here */
+
+The process that this app will use for pose estimation is simple:
+
+<ol>
+  <li>Given a video of an instructor and student, extract the joint coordinates for each of the student and instructor across all frames of the respective videos</li>
+  <li>Compute the angles between all pairs of adjacent limbs (ex. the angle between your right forearm and your right upper arm) for both the student and the instructor</li>
+  <li>Compute the absolute differences across all of these limb pairs, as well as the sum of angles across each frame</li>
+  <li>Find the best possible match of student and instructor using point set rigid registration and colour the limbs that are far away from the instructor's pose as red, else blue</li>
+</ol>
+
+Using this approach, the user can be able to scan through the video and find out areas that they need to improve on. Pictures help, so below is a flowchart describing the process:
+
+![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic.png?raw=true)
+
+This entire process will be implemented as a Flask API, which is why I recommended that you should preferably be comfortable with Flask. 
+
+#### Architecture
+
+Below is a diagram representing the architecture of the backend and its relationship to the frontend:
 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic2.png?raw=true)
 
-Gunicorn is a WSGI server that is the way in which the frontend will commute with the Flask API. RQ corresponds to a REDIS queue, where REDIS is an in-memory key-value storage system and is an excellent tool for creating job queues (serves users in a FIFO manner). The backend will receive a put request with two video files (student and instructor), afterwhich a REDIS queue will launch a job to be performed by a worker thread. 
+We will create an endpoint that allows for a PUT request from the frontend in which the student and instructor video files will be received. RQ corresponds to a REDIS queue, where REDIS is an in-memory key-value storage system and is an excellent tool for creating job queues (serves users in a FIFO manner). This queue will receive the job on one of the available worker threads, and pose extraction will execute the series of steps as described in the overview. When the pose extraction module has finished a job, it will emit the results back to the frontend through a websocket. 
 
-### Worker thread
+#### Backend file glossary
+<ul>
+  <li><b>./app/backend/app.py</b>
+    <ul>
+      <li>This corresponds to the Flask app, and this is where we will establish our endpoints for the frontend to make requests to</li>
+    </ul>
+  </li>
+  <li><b>./app/backend/worker.py</b>
+    <ul>
+      <li>This is the worker thread that processes the jobs on the REDIS queue</li>
+    </ul>
+  </li>
+  <li><b>./app/backend/util/pose_extraction.py</b>
+    <ul>
+      <li>This is a script that acts as a manager and is responsible for calling all necessary scripts and functions to perform the series of steps described in the overview</li>
+    </ul>
+  </li>
+  <li><b>./app/backend/util/angles.py</b>
+    <ul>
+      <li>This corresponds to a series of functions that are necessary for extracting the angles between adjacent limbs, creating animations, and for computing the error between student and instructor</li>
+    </ul>
+  </li>
+</ul>
+
+
+### worker.py
+
+This file establishes a connection with the REDIS server so that the worker can work work on a separate thread from the thread that the Flask app is on. Without this thread, requests made to the Flask API would be blocked. 
+
 ```python
 import os
 
@@ -100,10 +151,7 @@ if __name__ == '__main__':
     worker.work()
 ```
 
-This file is necessary for establishing a separate worker thread for the flask app. When the client submits a request to the backend, the Flask app then calls the worker thread to perform a job to prevent the Flask app from blocking.
-
-### Flask API
-In this part of the tutorial, the different components of the Flask app will be discussed.
+### app.py
 
 Below are the top of the file and the decorators and headers for each one of the endpoints:
 
@@ -127,10 +175,6 @@ CORS(app)  # Cross-origin resource sharing (React app using different port than 
 
 @app.route('/upload_video', methods=['POST'])
 def upload_video():
-    ...
-
-@app.route('/videos/overlaps/<path:path>')
-def send_static(path):
     ...
 
 @app.route('/get_overlaps', methods=["GET"])
@@ -172,18 +216,7 @@ def upload_video():
     }
 ```
 
-When the frontend makes a PUT request to 'upload_video', it sends instructor and student raw video files. rq then creates a new job by invoking the pose extraction.get_error utility function. Since jobs cannot have raw video passsed in as a parameter, the files first need to be written to disk, and then the job can re-read the files later. The 'job_timeout' argument of the q.enqueue method represents the maximum possible time in seconds that the backend has to execute the job. Additionally, a separate worker thread is responsible for executing the job, thus this function can return while the job is processed asynchronously. This allows the Flask app to avoid getting blocked by requests. 
-
-#### send_static
-
-```python
-@app.route('/videos/overlaps/<path:path>')
-def send_static(path):
-    logger.info(path)
-    return send_from_directory('videos/overlaps', path)
-```
-
-This endpoint is responsible for serving static files. Since javascript is client-side, it has no way of reading in files on the server, but it can make a get request to be able to fetch video data from the server.
+When the frontend makes a PUT request to 'upload_video', it sends instructor and student raw video files. rq then creates a new job by invoking the pose extraction.get_error utility function. Since jobs cannot have raw video passed in as a parameter, the files first need to be written to disk, and then the job can re-read the files later. The 'job_timeout' argument of the q.enqueue method represents the maximum possible time in seconds that the backend has to execute the job. Additionally, a separate worker thread is responsible for executing the job, thus this function can return while the job is processed asynchronously. This allows the Flask app to avoid getting blocked by requests. 
 
 #### get_overlaps
 
@@ -202,19 +235,100 @@ def get_overlaps():
     }
 ```
 
-This endpoint is responsible for fetching the result videos from the server. 
+This endpoint is responsible for fetching the result videos from the server (when the frontend makes a new http request). 
 
-### Pose extraction module
+### pose_extraction.py
 
-Now that the Flask API has been created, the next step is to create the 'pose_extraction' module that contains all the useful functions necessary for obtaining the poses of the instructor and student, returning the error between instructor and student, student correction, and video generation.
-
-The 'pose_extraction' worker function executes the following steps:
-
-![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic.png?raw=true)
-
-More specifically, in code:
+Now that the Flask API has been created, the next step is to create a script that executes the process as described in the overview. I will first show the script in its entirety, then I will break it up into chunks that describe each major step.
 
 ```python
+import os
+import sys
+import subprocess
+
+import numpy as np
+
+import torch
+from loguru import logger
+
+cur_dir = os.getcwd().split('/')[-1]
+if cur_dir == 'util':
+    import angles 
+elif cur_dir == 'backend':
+    import util.angles as angles
+else:
+    raise Exception('Not in proper directory')
+
+def get_error(instructor, student):
+
+    logger.info('Beginning process with instructor {} and student {}'.format(instructor, student))
+
+    cur_dir = os.getcwd()
+
+    main_dir = '../../'
+    os.chdir(main_dir)
+
+    logger.info('Beginning instructor inference')
+    try:
+        subprocess.run(['python3', 'setup/full_inference.py', '--input', instructor, '--output', 
+                        'out_instructor.mp4', '--joints', 'joints-{}.npy'.format(instructor.split('.')[0])], check=True)
+    except subprocess.CalledProcessError as e:
+        logger.info(e.output)
+        sys.exit(1)
+    logger.info('Finished instructor inference')
+
+    logger.info('Beginning student inference')
+    try:
+        subprocess.run(['python3', 'setup/full_inference.py', '--input', student, '--output', 
+                        'out_student.mp4', '--joints', 'joints-{}.npy'.format(student.split('.')[0])], check=True)
+    except subprocess.CalledProcessError as e:
+        logger.info(e.output)
+        sys.exit(1)
+    logger.info('Finished student inference')
+
+    instructor_pose = np.load('./joints/joints-{}.npy'.format(instructor.split('.')[0]))
+    student_pose    = np.load('./joints/joints-{}.npy'.format(student.split('.')[0]))
+
+    instructor_pose_tensor = torch.from_numpy(instructor_pose)
+    student_pose_tensor    = torch.from_numpy(student_pose)
+    
+    animation_directory = os.getcwd()
+    # Run angle comparison code
+    os.chdir(cur_dir)
+    angles_between = angles.ang_comp(instructor_pose_tensor, student_pose_tensor, round_tensor=True)
+    error = angles.error(angles_between)
+    logger.info('Error {}'.format(error))
+
+    os.chdir(animation_directory)
+    # Get overlap between student and instructor
+    ani, writer = angles.overlap_animation(instructor_pose, student_pose, error)
+    instructor = instructor.split('.mp4')[0]
+    student    = student.split('.mp4')[0]
+    ani.save('./app/frontend/public/videos/{}-{}.mp4'.format(instructor, student), writer=writer)
+
+    # Create point set 'registration'
+    return error
+```
+ 
+#### Required imports, and running pose extraction on the student and instructor
+```python
+import os
+import sys
+import subprocess
+
+import numpy as np
+
+import torch
+from loguru import logger
+
+cur_dir = os.getcwd().split('/')[-1]
+if cur_dir == 'util':
+    import angles 
+elif cur_dir == 'backend':
+    import util.angles as angles
+else:
+    raise Exception('Not in proper directory')
+    
 def get_error(instructor, student):
 
     logger.info('Beginning process with instructor {} and student {}'.format(instructor, student))
@@ -244,8 +358,7 @@ def get_error(instructor, student):
     ...
 ```
 
-This part of the function performs the 'infer keypoints' in the above diagram on the instructor and student. The function is continued in the next block...
-
+#### Creating an animation of the overlap between instructor and student, and returning the error between their poses
 ```python
     ...
     instructor_pose = np.load('./joints/joints-{}.npy'.format(instructor.split('.')[0]))
@@ -269,11 +382,9 @@ This part of the function performs the 'infer keypoints' in the above diagram on
     return error
 ```
 
-This part of the function loads the keypoints from memory, creates a video of the best possible overlap between the instructor and student, and then runs the angle comparison code which returns a rolling average error vector between the instructor and student across all frames.
-
 #### full_inference.py
 
-The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. In short, VideoPose3D performs 2D keypoint detection (with Detectron2 <sup><a href='#ref2'>2</a></sup>) across all frames of an input video, and then using temporal information between frames of 2D keypoints, does something called 'back-projection' which finds the most probable 3D pose given the input video.
+The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. 
 
 /* TODO: Have full setup instructions at the very BEGINNING of the tutorial 
 There is a script in the root folder of this repository called /setup/videopose_setup.py. This script will clone the VideoPose3D repository and install Detectron2. Afterwards, the Detectron2 model will have to be downloaded (https://dl.fbaipublicfiles.com/video-pose-3d/pretrained_h36m_detectron_coco.bin) and placed into /YogaPose3D/checkpoint. 
@@ -406,21 +517,53 @@ from pycpd import RigidRegistration
 
 #### Angle between
 ```python
-def angle_between(t1, t2, round_tensor=False):
-    norm1   = torch.norm(t1, dim=2).unsqueeze(-1)
-    norm2   = torch.norm(t2, dim=2).unsqueeze(-1)
-    unit_t1 = torch.div(t1, norm1)
-    unit_t2 = torch.transpose(torch.div(t1, norm2), 2, 1)
+def ang_comp(reference, student, round_tensor=False):
+    # Get all joint pair angles, frames x number of joint pairs
 
-    eps = 1e-7
-    cos_angles  = torch.bmm(unit_t1, unit_t2).clamp(-1 + eps, 1 - eps)
-    angles = cos_angles.acos()
-    print(cos_angles)
+    adjacent_limb_map = [
+                          [[0, 1],  [1, 2], [2, 3]],     # Right leg
+                          [[0, 4],  [4, 5], [5, 6]],     # Left leg
+                          [[0, 7],  [7, 8]],             # Spine
+                          [[8, 14], [14, 15], [15, 16]], # Right arm
+                          [[8, 11], [11, 12], [12, 13]], # Left arm
+                          [[8, 9],  [9, 10]]             # Neck
+                        ]
     
-    if round_tensor:
-        angles = torch.round(angles)
+    adjacent_limbs_ref = []
+    adjacent_limbs_stu = []
+    num_frames = len(reference)
+
+    def update_adjacent_limbs(person, adj, limb_id):
+        for adj_limb_id in range(len(adjacent_limb_map[limb_id]) - 1):
+            joint1a, joint1b = adjacent_limb_map[limb_id][adj_limb_id]
+            joint2a, joint2b = adjacent_limb_map[limb_id][adj_limb_id + 1]
+            
+            limb1_vector = person[joint1a] - person[joint1b]  # Difference vector between two joints
+            limb2_vector = person[joint2a] - person[joint2b]
+            
+            # Normalize the vectors
+            limb1_vector = torch.div(limb1_vector, torch.norm(limb1_vector)).unsqueeze(0)
+            limb2_vector = torch.div(limb2_vector, torch.norm(limb2_vector)).unsqueeze(0)
+            
+            adj.append(torch.Tensor(torch.cat([limb1_vector, limb2_vector], dim=0)).unsqueeze(0))
+
+    for idx in range(num_frames):
+        frame_reference = reference[idx]
+        frame_student   = student[idx]
+        for limb_id in range(len(adjacent_limb_map)):
+            update_adjacent_limbs(frame_reference, adjacent_limbs_ref, limb_id)
+            update_adjacent_limbs(frame_student, adjacent_limbs_stu, limb_id)
+        
+    adjacent_limbs_ref = torch.cat(adjacent_limbs_ref, dim=0)
+    adjacent_limbs_stu = torch.cat(adjacent_limbs_stu, dim=0)
+
+    # Get angles between adjacent limbs, each of the below tensors are of shape (num_frames x 10), aka scalars
+    adjacent_limbs_ref = torch.bmm(adjacent_limbs_ref[:, :1, :], adjacent_limbs_ref[:, 1, :].unsqueeze(-1))
+    adjacent_limbs_stu = torch.bmm(adjacent_limbs_stu[:, :1, :], adjacent_limbs_stu[:, 1, :].unsqueeze(-1))
     
-    return angles
+    # Get absolute difference between instructor and student angles 
+    absolute_diffs = torch.abs(adjacent_limbs_ref - adjacent_limbs_stu).reshape(num_frames, 10)
+    return absolute_diffs.sum(dim=1)
 ...
 ```
 
@@ -430,61 +573,61 @@ cos_theta = dot(a,b)/|a||b|
 
 Therefore, by normalizing each tensor, |t1||t2| = 1. So, in this case cos_theta = dot(a,b), and theta = arcos(a,b).
 
-
-#### Getting required angles
+#### Creating an overlap animation
 ```python
-def ang_comp(reference, student, round_tensor=False):
-    angles = angle_between(reference, student, round_tensor)
-    
-    pelvis_rhip  = angles[:, 0, 1].unsqueeze(1)
-    rhip_rknee   = angles[:, 1, 2].unsqueeze(1)
-    rknee_rankle = angles[:, 2, 3].unsqueeze(1)
-    pelvis_lhip  = angles[:, 0, 4].unsqueeze(1)
-    lhip_lknee   = angles[:, 4, 5].unsqueeze(1)
-    lknee_lankle = angles[:, 5, 6].unsqueeze(1)
-    pelvis_spine = angles[:, 0, 7].unsqueeze(1)
-
-    angles = torch.cat([pelvis_rhip, rhip_rknee, rknee_rankle, 
-                        pelvis_lhip, lhip_lknee, lknee_lankle, 
-                        pelvis_spine], axis=1)
-
-    return angles
-...
-```
-
-COME BACK TO THIS, because need to do angle_between(reference, reference) and student, student so that I can compare adjacent angles. 
-
-```python
-def overlap(reference, student):
+def overlap_animation(reference, student, error):
 
     assert len(reference) == len(student)
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.axis('off')
-    ax.set_xlim3d(-1., 1.)
-    ax.set_ylim3d(-1., 1.)
-    ax.set_zlim3d(0.,  1.)
-
-    scat = ax.scatter([], [], color='red', marker='o') 
-    scat2 = ax.scatter([], [], color = 'blue', marker = 'o')
-
-    iterations = len(reference)
-
-    def update_animation(idx):
-
-        ref_pts = reference[idx]
-        student_pts = student[idx]
-
-        scat._offsets3d = (ref_pts[:, 0], ref_pts[:, 1], ref_pts[:, 2])
-        scat2._offsets3d = (student_pts[:, 0], student_pts[:, 1], student_pts[:, 2])
+    error_text = ax.text2D(1, 1, 'Error: 0', transform=ax.transAxes)
+    # ax.axis('off')
     
-    ani    = animation.FuncAnimation(fig, update_animation, iterations,
-                                       interval=50, blit=False, repeat=True)
+    # There are 17 joints, therefore 16 limbs
+    ref_limbs = [ax.plot3D([], [], []) for _ in range(16)]
+    stu_limbs = [ax.plot3D([], [], []) for _ in range(16)]
+        
+    limb_map = [
+                [0, 1],  [1, 2], [2, 3],     # Right leg
+                [0, 4],  [4, 5], [5, 6],     # Left leg
+                [0, 7],  [7, 8],             # Spine
+                [8, 14], [14, 15], [15, 16], # Right arm
+                [8, 11], [11, 12], [12, 13], # Left arm
+                [8, 9],  [9, 10]             # Neck
+               ]
+        
+    def update_animation(idx):
+        ref_frame = reference[idx]
+        stu_frame = student[idx]
+        
+        for i in range(len(limb_map)):
+            ref_limbs[i][0].set_data(ref_frame[limb_map[i], :2].T)
+            ref_limbs[i][0].set_3d_properties(ref_frame[limb_map[i], 2])
+            
+            stu_limbs[i][0].set_data(stu_frame[limb_map[i], :2].T)
+            stu_limbs[i][0].set_3d_properties(stu_frame[limb_map[i], 2])
+
+            if i < len(error):
+                error_text.set_text('Error: {}'.format(error[i]))
+        
+    iterations = len(reference)
+    ani = animation.FuncAnimation(fig, update_animation, iterations,
+                                  interval=50, blit=False, repeat=True)
     Writer = animation.writers['ffmpeg']
     writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
 
     return ani, writer
+```
+
+#### Getting required angles
+
+```
+
+COME BACK TO THIS, because need to do angle_between(reference, reference) and student, student so that I can compare adjacent angles. 
+
+```python
+
 ...
 ```
 This function returns an animation object which overlays the student and instructor coordinates, as well as a writer to write to disk.
@@ -505,13 +648,50 @@ def error(angle_tensor, window_sz=15):
 
 Given the difference in error in adjacent angles, computes a rolling average across all frames to remove any anomalies. This will be used to create a heatmap to the frontend of areas where they need to improve and areas where they did well. 
 
-## Building frontend in React
-Now that the workhorse of the app has been created, the next step is to make a frontend. The frontend should have a homepage, a page for uploading videos, and a page where you can see your processed videos. 
+## Building frontend 
+### Overview of React and our frontend
+React is a framework that makes it easy for anyone to build an interactive user interface, and was designed for single-page application development. The "atoms" of React are called <b>components</b>, which are isolated pieces of code that allow the UI and the code logic to be loosely coupled. JSX is a markup language that allows components (code logic rendering) and UI to be merged together in a way that feels super similar to writing pure HTML. Therefore, instead of a complete separation of concerns (UI from logic), the motivation behind JSX is that "rendering logic is inherently coupled with the UI". 
+
+The frontend for this yoga app will have 6 components:
+
+<ul>
+  <li><b>App</b>
+    <ul>
+      <li>"Manager" of the frontend</li>
+      <li>Renders a menu at the top of the screen with links to each of the pages, and when the user clicks on a link, renders the associated component</li>
+      <li>Contains a state attribute that can be passed on with each of the components</li>
+      <li>Fetches all processed videos if they exist</li>
+    </ul>
+  </li>
+  <li><b>HomePage</b>
+    <ul>
+      <li>Displays an enticing video that shows the VideoPose3D technology in action</li>
+      <li>Displays the instructions that the user needs to follow to process their videos</li>
+    </ul>
+  </li>
+  <li><b>HomeInstructions</b></li>
+  <li><b>UploadVid</b>
+    <ul>
+      <li>Contains two dropzones, one for uploading the student video, and one for uploading the instructor video</li>
+      <li>Contains a submit button that will create a put request to the backend, and will create a card ID for the ProcessedVideos components</li>
+    </ul>
+  </li>
+  <li><b>ProcessedVideos</b>
+    <ul>
+      <li>Given an array containing video ids, titles, dates, and video paths, will render cards containing the progress of the backend for that associated card as well as the processed video when it is complete.</li>
+    </ul>
+  </li>
+  <li><b>Team</b>
+    <ul>
+      <li>A little self-plug about me and my business contact information :P</li>
+    </ul>
+  </li>
+</ul>
+
+We will go over each of the components in order.
 
 ### App.js
-In a typical React app, there is a file called App.js that serves as a driver for the program. This file will allow for the rendering of each of the pages, as well as triggering specific methods when the website is loaded. App.js will contain a class called App which extends the React Component class. 
-
-The code for App.js is below:
+Although it may seem overwhelming, I will display the entire component block first, and then discuss each major section of the code.
 
 ```JSX
 import React, { Component } from 'react';
@@ -528,6 +708,11 @@ import './App.css';
 const ids = ['team', 'videos', 'upload'];
 
 class App extends Component {
+
+    constructor() {
+        super();
+        this.state = {title: [], link: [], date: [], path: []};
+    }
 
     active_color(menu_id) {
         ids.forEach(id => document.getElementById(id).style.color = 'black');
@@ -565,11 +750,6 @@ class App extends Component {
 
     componentDidMount() {
         window.addEventListener('load', this.onLoad());
-    }
-
-    constructor() {
-        super();
-        this.state = {title: [], link: [], date: [], path: []};
     }
 
     updateCards(title, link, date, path) {
@@ -622,9 +802,93 @@ class App extends Component {
 export default App;
 ```
 
-This piece of code will be broken down one chunk at a time. 
+#### Imports
+```JSX
+import React, { Component } from 'react';
+import wld from './images/wld.jpeg';
+import { BrowserRouter as Router, Link, Route} from 'react-router-dom';
+import HomePage from './Components/HomePage';
+import Team from './Components/Team';
+import UploadVid from './Components/upload/UploadVid';
+import ProcessedVideos from './Components/ProcessedVideos';
 
-In the render method of App, JSX code is returned, which looks similar to html, except you can also supply javascript objects. During the build procedure, the React class is used to translate this JSX code into javascript. Any classes that extend Component can be embedded into JSX template. 
+import 'animate.css';
+import './App.css';
+```
+As described in the frontend overview, the App component serves as a driver for each of the other components, so it should make sense that we need to import each of the HomePage, Team, UploadVid, and ProcessedVideos components so that we can render them at some point in the application. More importantly, you will notice that we imported Read and Component. Importing React will allow the JSX code that we will be writing to be rendered, and Component will be the parent class of the App component we are building.
+
+#### Class definition and constructor
+```JSX
+class App extends Component {
+
+    constructor() {
+        super();
+        this.state = {title: [], link: [], date: [], path: []};
+    }
+```
+
+So, now this is your first time seeing the creation of a React component. Although not the only way to create a component, we are using a class to represent the App component, and if you want a class to be a component, it must extend the Component class to be treated as a React component and to inherit the useful methods associated with components. App also has a state attribute containing an array for each of title, link, date, and path. We will be using this state to represent the user's processed videos.
+
+#### On loading of App
+```JSX
+    ...
+    active_color(menu_id) {
+        ids.forEach(id => document.getElementById(id).style.color = 'black');
+        document.getElementById(menu_id).style.color = 'green';
+    }
+    
+    onLoadColor() {
+        if (window.location.href.includes('meetTheTeam')) {
+            document.getElementById('team').style.color = 'green';
+        }
+        else if (window.location.href.includes('processed_videos')) {
+            document.getElementById('videos').style.color = 'green';
+        }
+        else if (window.location.href.includes('upload')) {
+            document.getElementById('upload').style.color = 'green';
+        }
+    }
+
+    updateCardsFromTitle(filePath) {
+        var fileSplit = filePath.split('/');
+        var fileName = fileSplit[fileSplit.length - 1];
+        this.updateCards(fileName, '', 'Oct 12, 2020', filePath);
+    }
+    
+    onLoadCards() {
+        fetch('http://127.0.0.1:5000/get_overlaps')
+          .then(response => response.json())
+          .then(response => JSON.parse(response.files).forEach(file => this.updateCardsFromTitle(file)));
+    }
+    
+    onLoad() {
+        this.onLoadColor();
+        this.onLoadCards();
+    }
+    
+    componentDidMount() {
+        window.addEventListener('load', this.onLoad());
+    }
+    ...
+```
+
+The componentDidMount method always gets called when a component is rendered (such as is the case when a user makes an http request). We overloaded this method with our own event listener that will trigger our specific methods when the component is rendered. More specially, the onLoad method loads the associated colours of the page links (we want the active page link to have a different colour than the other page links) and also fetches processed videos if they exist. 
+
+#### Updating the state
+```JSX
+    updateCards(title, link, date, path) {
+        var newtitle = this.state.title.concat(title);
+        var newlink  = this.state.link.concat(link);
+        var newdate  = this.state.date.concat(date);
+        var newpath  = this.state.path.concat(path)
+        this.setState({title: newtitle, link: newlink, date: newdate, path: newpath});
+        console.log(this.state);
+    }
+```
+
+A very important attribute is the state attribute of a React component, because it has its own reserved special method called setState. Notice how in this method, we didn't try to change the state variable ourselves (as in push the title, link, date, and path onto the state). The reason for this is because if we were to do this, a re-rendering step would not be performed and we wouldn't see the results of the state change in the UI. The setState method not only changes the changes, but any UI that depends on the state is re-rendered.
+
+#### Render
 
 ```JSX
     ...
@@ -664,23 +928,34 @@ In the render method of App, JSX code is returned, which looks similar to html, 
             </Router>
         );
 ```
+The render method is the most important method of a React component. This is the method that will allow our UI to be rendered by the DOM. You might notice that the block that is being returned looks awfully similar to HTML, except that React components show up in the code. This is called JSX markup.
 
-React routers allow for React components to be rendered dynamically. The 'Link' component changes the URL, and the exact path renders each of HomePage, Team, ProcessedVideos, and UploadVid whenever the URL path matches the specified path exactly. 
-
-```JSX
-    ...
-    constructor() {
-        super();
-        this.state = {title: [], link: [], date: [], path: []};
-    }
-    ...
-```
-
-'state' is a special attribute for React components that contains useful attributes that the class should have. Calling the setState method on a React class will trigger a re-rendering phase that you would not get if you tried to set the state yourself. 
+There are few particular areas that are important to examine: first, the entire JSX block is wrapped inside of a Router component. React routers are incredibly useful for single-page apps. They allow us to dynamically render React components when the URL path matches a particular string. In this block, the URL gets updated by the Link components, and at the bottom, you'll notice the block of code where each line is <Route exact path=PATH component={Component}/>. 
 
 ### Home page
 
-### 'Video upload' page
+### UploadVid.js
+
+This component is responsible for the UI of the video upload page as well as the logic behind what happens when a particular video is updated as well as when a video is submitted. We will be using the React Dropzone library for this component, which makes file uploading incredibly easy. 
+
+The logic behind this component is simple:
+
+<ul>
+  <li>This component will have a state containing two attributes: f1 and f2, where f1 corresponds to the instructor file and f2 corresponds to the instructor file. They will originally have null values</li>
+  <li>There will be two dropzones
+    <ol>
+      <li>The first will contain a dropzone for the instructor, and when a user drops a video in this zone, the f1 attribute will be updated and the filename will appear under the zone to notify the user that their video was succesfully dropped.</li>
+      <li>The second will do the same thing as the first, except it will be for the student video</li>
+    </ol>
+  </li>
+  <li>There will be a submit button and...
+    <ol>
+      <li>...if the user clicks on the submit button and at least one of the files is null, then text appears notifying the user that they need to upload both instructor and student videos.</li>
+      <li>...if both files are present, then the component will make a PUT request to the Flask app. Once the frontend receives a successful response code (status 200), then this component will update the cards of the parent App component</li>
+    </ol>
+  </li>
+</ul>
+
 ```JSX
 import React, {Component, useCallback, useMemo, useState} from 'react';
 
@@ -691,37 +966,7 @@ import Button from 'react-bootstrap/Button';
 import '../../../node_modules/bootstrap/dist/css/bootstrap.min.css';
 
 
-const baseStyle = {
-  flex: 1,
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  padding: '20px',
-  marginLeft: '10%',
-  marginRight: '13%',
-  cursor: 'pointer',
-  borderWidth: 2,
-  borderRadius: 2,
-  borderColor: '#eeeeee',
-  borderStyle: 'dashed',
-  backgroundColor: '#fafafa',
-  color: '#bdbdbd',
-  outline: 'none',
-  transition: 'border .24s ease-in-out'
-};
-
-const activeStyle = {
-  borderColor: '#2196f3'
-};
-
-const acceptStyle = {
-  borderColor: '#00e676'
-};
-
-const rejectStyle = {
-  borderColor: '#ff1744'
-};
-
+...
 class MyDropzone extends Component{
 
   constructor(props) {
