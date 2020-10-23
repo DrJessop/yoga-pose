@@ -497,12 +497,29 @@ except subprocess.CalledProcessError as e:
 
 Once complete, a numpy array of 3D keypoints across all frames is created and saved to a file. 
 
+The array will be of size (num_frames)x17x3, since we have a matrix of keypoints for each frame, there are 17 joints that are being detected, and we are detecting 3D coordinates, hence a 3 at the end.
+
+Here is a rough diagram that I made outlining the 3D coordinates being detected in each frame, indexed by the joints 0-based index location in the array.
 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/video_pose_coordinates.png?raw=true)
 
 
 ### angle extraction
-Now that we have the 3D keypoints across all frames, we can create a module for correcting the student's pose in reference to an instructor. 
+Now that we have the 3D keypoints across all frames, we can create a module for correcting the student's pose in reference to an instructor. This will consist of finding the angles between adjacent limbs for the instructor and student, and then getting the sum of absolute angular differences to create an error vector for a frame.
+
+Recall from linear algebra what it means to subtract two vectors:
+
+![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/vector_subtraction.png?raw=true)
+
+Therefore, using this same reasoning, to get the vector for a limb, we can just subtract two joint vectors:
+
+![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/limb_vector.png?raw=true)
+
+Then, to get the cosine of the angle between two adjacent limbs, we can use the following formula:
+
+![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/cos_angle.png?raw=true)
+
+By taking the arccosine of the result, we have the angle between two adjacent limbs.
 
 #### Required imports
 
