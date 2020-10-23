@@ -497,6 +497,10 @@ except subprocess.CalledProcessError as e:
 
 Once complete, a numpy array of 3D keypoints across all frames is created and saved to a file. 
 
+
+![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/video_pose_coordinates.png?raw=true)
+
+
 ### angle extraction
 Now that we have the 3D keypoints across all frames, we can create a module for correcting the student's pose in reference to an instructor. 
 
@@ -815,10 +819,13 @@ import ProcessedVideos from './Components/ProcessedVideos';
 import 'animate.css';
 import './App.css';
 ```
-As described in the frontend overview, the App component serves as a driver for each of the other components, so it should make sense that we need to import each of the HomePage, Team, UploadVid, and ProcessedVideos components so that we can render them at some point in the application. More importantly, you will notice that we imported Read and Component. Importing React will allow the JSX code that we will be writing to be rendered, and Component will be the parent class of the App component we are building.
+As described in the frontend overview, the App component serves as a driver for each of the other components, so it should make sense that we need to import each of the HomePage, Team, UploadVid, and ProcessedVideos components so that we can render them at some point in the application. More importantly, you will notice that we imported React and Component. Importing React will allow the JSX code that we will be writing to be rendered, and Component will be the parent class of the App component we are building.
 
 #### Class definition and constructor
 ```JSX
+...
+const ids = ['team', 'videos', 'upload'];
+
 class App extends Component {
 
     constructor() {
@@ -827,7 +834,7 @@ class App extends Component {
     }
 ```
 
-So, now this is your first time seeing the creation of a React component. Although not the only way to create a component, we are using a class to represent the App component, and if you want a class to be a component, it must extend the Component class to be treated as a React component and to inherit the useful methods associated with components. App also has a state attribute containing an array for each of title, link, date, and path. We will be using this state to represent the user's processed videos.
+So, now this is your first time seeing the creation of a React component. Although not the only way to create a component, we are using a class to represent the App component, and if you want a class to be a component, it must extend the Component class to be treated as a React component and to inherit the useful methods associated with components. App also has a state attribute containing an array for each of title, link, date, and path. We will be using this state to represent the user's processed videos. The ids array just contains ids for the components that App will render, and we will need them later.
 
 #### On loading of App
 ```JSX
@@ -872,10 +879,11 @@ So, now this is your first time seeing the creation of a React component. Althou
     ...
 ```
 
-The componentDidMount method always gets called when a component is rendered (such as is the case when a user makes an http request). We overloaded this method with our own event listener that will trigger our specific methods when the component is rendered. More specially, the onLoad method loads the associated colours of the page links (we want the active page link to have a different colour than the other page links) and also fetches processed videos if they exist. 
+The componentDidMount method always gets called when a component is rendered (such as is the case when the client makes an http request). We overloaded this method with our own event listener that will trigger our specific methods when the component is rendered. More specially, the onLoad method loads the associated colours of the page links (we want the active page link to have a different colour than the other page links) and also fetches processed videos if they exist. updateCardsFromTitle is a method that given the path of a processed video creates the attributes for generating a video card with updateCards (described in the next section).
 
 #### Updating the state
 ```JSX
+    ...
     updateCards(title, link, date, path) {
         var newtitle = this.state.title.concat(title);
         var newlink  = this.state.link.concat(link);
@@ -886,7 +894,7 @@ The componentDidMount method always gets called when a component is rendered (su
     }
 ```
 
-A very important attribute is the state attribute of a React component, because it has its own reserved special method called setState. Notice how in this method, we didn't try to change the state variable ourselves (as in push the title, link, date, and path onto the state). The reason for this is because if we were to do this, a re-rendering step would not be performed and we wouldn't see the results of the state change in the UI. The setState method not only changes the changes, but any UI that depends on the state is re-rendered.
+A very important attribute is the state attribute of a React component, because it has its own reserved special method called setState. Notice how in this method, we didn't try to change the state variable ourselves (as in push the title, link, date, and path onto the state). The reason for this is because if we were to do this, a re-rendering step would not be performed and we wouldn't see the results of the state change in the UI. The setState method not only changes the changes, but any UI that depends on the state is re-rendered. Therefore, if your React component is a class and has an attribute that when changed should change the UI, it should be part of the state object and should be changed using setState.
 
 #### Render
 
@@ -930,7 +938,32 @@ A very important attribute is the state attribute of a React component, because 
 ```
 The render method is the most important method of a React component. This is the method that will allow our UI to be rendered by the DOM. You might notice that the block that is being returned looks awfully similar to HTML, except that React components show up in the code. This is called JSX markup.
 
-There are few particular areas that are important to examine: first, the entire JSX block is wrapped inside of a Router component. React routers are incredibly useful for single-page apps. They allow us to dynamically render React components when the URL path matches a particular string. In this block, the URL gets updated by the Link components, and at the bottom, you'll notice the block of code where each line is <Route exact path=PATH component={Component}/>. 
+There are few particular areas that are important to examine: first, the entire JSX block is wrapped inside of a Router component. React routers are incredibly useful for single-page apps since they allow us to dynamically render React components when the URL path matches a particular string. Link components are similar to html links, except to use React routers, one also needs to use Link components. When a user clicks on particular Link component, the URL path changes, and you can read the bottom block <Route exact path=PATH component=COMPONENT /> as a conditional block where if the path matches the associated path signature, then a particlar component will be rendered. 
+
+The next important part to notice is when the path matches '/processed_videos'. 
+
+```JSX
+             ...
+             <Route exact path='/processed_videos' component={() => <ProcessedVideos title={this.state.title} 
+                                                                                     link={this.state.link}
+                                                                                     date={this.state.date}
+                                                                                     path={this.state.path}/>} />
+             ...
+```
+
+React components all have a "props" object. Basically, it is the data that is passed from one component to another. In one of the ProcessedVideos methods, if I were to call this.props.title, it would correspond to the title that was passed to it from a different component.
+
+The final important part of this code to examine is the final Route:
+
+```JSX
+            ...
+            <Route exact path='/upload' component={() => <UploadVid updateCards={(title, link, date, path) => 
+                                                                                    this.updateCards(title, link, date, path)} />}/>
+            </Router>
+            ...
+```
+
+In the same way that we can pass in attributes through props, we can also pass in methods. In this case, the updateCards method supplied to props here corresponds to a lambda function that when called triggers the App's updateCards method to be invoked. 
 
 ### Home page
 
@@ -955,6 +988,8 @@ The logic behind this component is simple:
     </ol>
   </li>
 </ul>
+
+Below is the entire code:
 
 ```JSX
 import React, {Component, useCallback, useMemo, useState} from 'react';
@@ -1077,9 +1112,95 @@ class MyDropzone extends Component{
 export default MyDropzone;
 ```
 
-### 'Your videos' page
+Let's break each step down...
 
-The 'Your videos' page should contain cards that show the resultant job that is processed, as well as unique filename identifier and the date that the job was created. Below is the code snippet:
+#### Attributes and attribute setters
+```JSX
+class MyDropzone extends Component{
+
+  constructor(props) {
+    super();
+    this.state = {f1: null, f2: null};
+  }
+
+  on_drop1 = (acceptedFile) => {
+    this.setState({f1: acceptedFile[0], f2: this.state.f2});
+    console.log(this.state);
+    document.getElementById('file1_upload').innerHTML = acceptedFile[0].path;
+  }
+
+  on_drop2 = (acceptedFile) => {
+    this.setState({f1: this.state.f1, f2: acceptedFile[0]});
+    console.log(this.state);
+    document.getElementById('file2_upload').innerHTML = acceptedFile[0].path;
+  }
+```
+
+Just like in App.js, this class must extend Component. The state attribute contains two file attributes, f1 and f2, which are obviously null when this is rendered for the first time. Since we will have two dropzones, we need to have two different on_drop methods corresponding to which dropzone was accessed. When a file is dropped in the first dropzone, the first file of state has to change. Recall from the previous section that it's best practice and sometimes required to set the state using the setState method, so we will invoke it here.
+
+#### THIS CODE NEEDS TO BE FIXED!!!!
+
+```JSX
+  ...
+  successful_upload = () => {
+    document.getElementById('file1_upload').innerHTML = '';
+    document.getElementById('file2_upload').innerHTML = '';
+    this.setState({f1: null, f2: null});
+    document.getElementById('submit_message').innerHTML = `Upload successful. Go to the videos tab to see results 
+                                                           or upload more videos here.`;
+  }
+  ...
+```
+
+This method is responsible for setting the state back to null after re-rendering.
+
+#### Submitting
+```JSX
+  ...
+  submit = function() {
+
+    if (this.state.f1 === null || this.state.f2 === null) {
+      if (this.state.f1 === null) {
+        document.getElementById('file1_upload').innerHTML = 'You must submit an instructor video';
+      }
+      if (this.state.f2 === null) {
+        document.getElementById('file2_upload').innerHTML = 'You must submit a student video';
+      }
+      document.getElementById('submit_message').innerHTML = '';
+      return;
+    }
+
+    let instructor = this.state.f1;
+    let student    = this.state.f2;
+    let date       = new Date;
+
+    const time_ext = date.getTime().toString() + '.mp4';
+    let instructor_fname = 'student_' + time_ext;
+    let student_fname    = 'instructor_' + time_ext;
+
+    const form_data = new FormData();
+
+    form_data.append('instructor', instructor, instructor_fname);
+    form_data.append('student', student, student_fname);
+
+    fetch('http://127.0.0.1:5000/upload_video', {
+      method: 'POST',
+      body: form_data
+    }).then(response => response.json())
+      .then(response => console.log(response))
+      .then(this.successful_upload())
+      .then(this.props.updateCards(instructor_fname + ' ' + student_fname, "in progress", date.getDate()));
+  }
+  ...
+```
+
+This method first checks whether at least one of the files is null, and displays a message to upload both an instructor and student video to the user if so. Else, a FormData object is created and is populated with the instructor and student raw files and filenames, and then submits a fetch request to the Flask API 'upload_video' endpoint. The fetch function is a typical javascript function, but if you are not familiar with it...
+
+TALK ABOUT PROMISES.
+
+### ProcessedVideos.js
+
+This component is responsible for rendering all of the cards (which contain the processed videos) to the UI. The code is displayed below:
 
 ```JSX
 import React from 'react';
@@ -1121,8 +1242,6 @@ const ProcessedVideos = (props) => {
 
 export default ProcessedVideos;
 ```
-
-This file is supplied with a props parameter which is an object with three parameters: title, path, and date. Title stores the name that the user chose for the card name, the path is the path to the source video, and date is the date that the job was created. 
 
 ## What's Next 
 - Real-time application
