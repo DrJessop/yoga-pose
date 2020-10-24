@@ -76,6 +76,8 @@ mkdir videos/output
 
 NOTE: Installing Detectron2 requires you to have gcc and g++ installed. 
 
+Once this is successfully completed, a particular model needs to be downloaded from https://dl.fbaipublicfiles.com/video-pose-3d/pretrained_h36m_detectron_coco.bin. Once downloaded, place the file in ./VideoPose3D/checkpoint.
+
 ### Running model on a CPU (Optional)
 If you don't have access to a GPU, you must change infer_video_d2.py in VideoPose3D/inference/:
 
@@ -446,13 +448,7 @@ def get_error(instructor, student):
 
 #### full_inference.py
 
-The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. 
-
-/* TODO: Have full setup instructions at the very BEGINNING of the tutorial 
-There is a script in the root folder of this repository called /setup/videopose_setup.py. This script will clone the VideoPose3D repository and install Detectron2. Afterwards, the Detectron2 model will have to be downloaded (https://dl.fbaipublicfiles.com/video-pose-3d/pretrained_h36m_detectron_coco.bin) and placed into /YogaPose3D/checkpoint. 
-*/
-
-There are step by step instructions in https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md on how to run VideoPose3D on a sample video, however the process needs to be automated for this app. 
+The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. There are step by step instructions in https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md on how to run VideoPose3D on a sample video, however the process needs to be automated for this app. 
 
 This script is broken into four components, in order:
 
