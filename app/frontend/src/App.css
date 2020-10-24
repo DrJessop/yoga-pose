@@ -1,8 +1,12 @@
 
-.yoga-vid {
+.videos {
   margin-left: auto;
   margin-right: auto;
   display: block;
+}
+
+#feauture-slider .videos {
+  color: linear-gradient(red, blue, green);
 }
 
 .vid-text { 
