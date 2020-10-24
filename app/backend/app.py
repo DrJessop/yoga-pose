@@ -1,12 +1,11 @@
 import os
+import json
 
 from flask import (
-    Flask, redirect, request, url_for, 
-    json
+    Flask, request, send_from_directory
 )
 from flask_cors import CORS
 from loguru import logger
-
 from rq import Queue
 from rq.job import Job
 from worker import conn
@@ -45,6 +44,25 @@ def upload_video():
     return {
         'status': 200,
         'mimetype': 'application/json'
+    }
+
+@app.route('/videos/overlaps/<path:path>')
+def send_static(path):
+    logger.info(path)
+    return send_from_directory('videos/overlaps', path)
+
+
+@app.route('/get_overlaps', methods=["GET"])
+def get_overlaps():
+    logger.info('Getting overlap data')
+
+    files = ['/videos/{}'.format(f) for f in os.listdir('../frontend/public/videos') if '.mp4' in f]
+    
+    logger.info(files)
+    return {
+        'status': 200,
+        'mimetype': 'application/json',
+        'files': json.dumps(files)
     }
 
 if __name__ == '__main__':
