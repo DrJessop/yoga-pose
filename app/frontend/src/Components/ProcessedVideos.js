@@ -6,8 +6,8 @@ import '../../node_modules/bootstrap/dist/css/bootstrap.min.css';
 const ProcessedVideos = (props) => {
 
     var html = [];
-    var idx = 0;
-    for (; idx < props.title.length; idx++) {
+    console.log(props);
+    for (var idx = 0; idx < props.title.length; idx++) {
         html.push(
         <div id={idx} style={{padding:'7%'}}>
             <Card>
@@ -15,7 +15,9 @@ const ProcessedVideos = (props) => {
                 <Card.Body>
                     <blockquote className="blockquote mb-0">
                     <p>
-                        <a href={props.link[idx]}>{props.link[idx]}</a>
+                    <video muted controls className='videos'>
+                        <source src={props.path[idx]} type='video/mp4' />
+                    </video>
                     </p>
                     <footer className="blockquote-footer">
                         {props.date[idx]}

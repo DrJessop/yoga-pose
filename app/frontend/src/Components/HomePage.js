@@ -7,7 +7,7 @@ import yoga_output from '../videos/yoga_output.mp4';
 const HomePage = () => {
     return (
         <>
-            <video id='yoga-vid' className='yoga-vid' muted autoPlay loop>
+            <video id='yoga-vid' className='videos' muted autoPlay loop>
                 <source src={yoga_output} type='video/mp4' />
             </video>
             <center><p className='vid-text'>Find your flow</p></center>

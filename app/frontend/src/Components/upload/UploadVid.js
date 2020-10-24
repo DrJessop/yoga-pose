@@ -80,8 +80,9 @@ class MyDropzone extends Component{
 
     let instructor = this.state.f1;
     let student    = this.state.f2;
+    let date       = new Date;
 
-    const time_ext = (new Date).getTime().toString() + '.mp4';
+    const time_ext = date.getTime().toString() + '.mp4';
     let instructor_fname = 'student_' + time_ext;
     let student_fname    = 'instructor_' + time_ext;
 
@@ -96,7 +97,7 @@ class MyDropzone extends Component{
     }).then(response => response.json())
       .then(response => console.log(response))
       .then(this.successful_upload())
-      .then(this.props.updateCards("1", "2", "3"));
+      .then(this.props.updateCards(instructor_fname + ' ' + student_fname, "in progress", date.getDate()));
   }
 
   render() {
