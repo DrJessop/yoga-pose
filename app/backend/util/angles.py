@@ -1,35 +1,110 @@
-import torch
-import pypcd
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import scipy.signal as signal
+import numpy as np
 
-def angle_between(t1, t2, round_tensor=False):
-    norm1   = torch.norm(t1, dim=2).unsqueeze(-1)
-    norm2   = torch.norm(t2, dim=2).unsqueeze(-1)
-    unit_t1 = torch.div(t1, norm1)
-    unit_t2 = torch.transpose(torch.div(t1, norm2), 2, 1)
-    angles  = torch.bmm(unit_t1, unit_t2).clamp(-1, 1).acos()
-    
-    if round_tensor:
-        angles = torch.round(angles)
-    
-    return angles
+import torch
+from pycpd import RigidRegistration
 
 def ang_comp(reference, student, round_tensor=False):
-    angles = angle_between(reference, student, round_tensor)
+    # Get all joint pair angles, frames x number of joint pairs
+
+    adjacent_limb_map = [
+                          [[0, 1],  [1, 2], [2, 3]],     # Right leg
+                          [[0, 4],  [4, 5], [5, 6]],     # Left leg
+                          [[0, 7],  [7, 8]],             # Spine
+                          [[8, 14], [14, 15], [15, 16]], # Right arm
+                          [[8, 11], [11, 12], [12, 13]], # Left arm
+                          [[8, 9],  [9, 10]]             # Neck
+                        ]
     
-    pelvis_rhip  = angles[:, 0, 1].unsqueeze(1)
-    rhip_rknee   = angles[:, 1, 2].unsqueeze(1)
-    rknee_rankle = angles[:, 2, 3].unsqueeze(1)
-    pelvis_lhip  = angles[:, 0, 4].unsqueeze(1)
-    lhip_lknee   = angles[:, 4, 5].unsqueeze(1)
-    lknee_lankle = angles[:, 5, 6].unsqueeze(1)
-    pelvis_spine = angles[:, 0, 7].unsqueeze(1)
+    adjacent_limbs_ref = []
+    adjacent_limbs_stu = []
+    num_frames = len(reference)
 
-    angles = torch.cat([pelvis_rhip, rhip_rknee, rknee_rankle, 
-                        pelvis_lhip, lhip_lknee, lknee_lankle, 
-                        pelvis_spine], axis=1)
+    def update_adjacent_limbs(person, adj, limb_id):
+        for adj_limb_id in range(len(adjacent_limb_map[limb_id]) - 1):
+            joint1a, joint1b = adjacent_limb_map[limb_id][adj_limb_id]
+            joint2a, joint2b = adjacent_limb_map[limb_id][adj_limb_id + 1]
+            
+            limb1_vector = person[joint1a] - person[joint1b]  # Difference vector between two joints
+            limb2_vector = person[joint2a] - person[joint2b]
+            
+            # Normalize the vectors
+            limb1_vector = torch.div(limb1_vector, torch.norm(limb1_vector)).unsqueeze(0)
+            limb2_vector = torch.div(limb2_vector, torch.norm(limb2_vector)).unsqueeze(0)
+            
+            adj.append(torch.Tensor(torch.cat([limb1_vector, limb2_vector], dim=0)).unsqueeze(0))
 
-    return angles
+    for idx in range(num_frames):
+        frame_reference = reference[idx]
+        frame_student   = student[idx]
+        for limb_id in range(len(adjacent_limb_map)):
+            update_adjacent_limbs(frame_reference, adjacent_limbs_ref, limb_id)
+            update_adjacent_limbs(frame_student, adjacent_limbs_stu, limb_id)
+        
+    adjacent_limbs_ref = torch.cat(adjacent_limbs_ref, dim=0)
+    adjacent_limbs_stu = torch.cat(adjacent_limbs_stu, dim=0)
 
-def error(angle_tensor):
-    absolute_error = angle_tensor.sum(dim=1).view(-1)
-    return absolute_error
+    # Get angles between adjacent limbs, each of the below tensors are of shape (num_frames x 10), aka scalars
+    adjacent_limbs_ref = torch.bmm(adjacent_limbs_ref[:, 0:1, :], adjacent_limbs_ref[:, 1, :].unsqueeze(-1))
+    adjacent_limbs_stu = torch.bmm(adjacent_limbs_stu[:, 0:1, :], adjacent_limbs_stu[:, 1, :].unsqueeze(-1))
+    
+    # Get absolute difference between instructor and student angles 
+    absolute_diffs = torch.abs(adjacent_limbs_ref - adjacent_limbs_stu).reshape(num_frames, 10)
+    return absolute_diffs.sum(dim=1)
+
+def overlap_animation(reference, student, error):
+
+    assert len(reference) == len(student)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    error_text = ax.text2D(1, 1, 'Error: 0', transform=ax.transAxes)
+    # ax.axis('off')
+    
+    # There are 17 joints, therefore 16 limbs
+    ref_limbs = [ax.plot3D([], [], []) for _ in range(16)]
+    stu_limbs = [ax.plot3D([], [], []) for _ in range(16)]
+        
+    limb_map = [
+                [0, 1],  [1, 2], [2, 3],     # Right leg
+                [0, 4],  [4, 5], [5, 6],     # Left leg
+                [0, 7],  [7, 8],             # Spine
+                [8, 14], [14, 15], [15, 16], # Right arm
+                [8, 11], [11, 12], [12, 13], # Left arm
+                [8, 9],  [9, 10]             # Neck
+               ]
+        
+    def update_animation(idx):
+        ref_frame = reference[idx]
+        stu_frame = student[idx]
+        
+        for i in range(len(limb_map)):
+            ref_limbs[i][0].set_data(ref_frame[limb_map[i], :2].T)
+            ref_limbs[i][0].set_3d_properties(ref_frame[limb_map[i], 2])
+            
+            stu_limbs[i][0].set_data(stu_frame[limb_map[i], :2].T)
+            stu_limbs[i][0].set_3d_properties(stu_frame[limb_map[i], 2])
+
+            if i < len(error):
+                error_text.set_text('Error: {}'.format(error[i]))
+        
+    iterations = len(reference)
+    ani = animation.FuncAnimation(fig, update_animation, iterations,
+                                  interval=50, blit=False, repeat=True)
+    Writer = animation.writers['ffmpeg']
+    writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
+
+    return ani, writer
+
+def error(angle_tensor, window_sz=15):
+
+    rolling_average = np.convolve(angle_tensor, np.ones(window_sz,)) / window_sz
+    max_error = rolling_average.max()
+    min_error = rolling_average.min()
+
+    if max_error != min_error:
+        rolling_average = (rolling_average - min_error) / (rolling_average - min_error)  # Normalize error between 0 and 1
+
+    return rolling_average
