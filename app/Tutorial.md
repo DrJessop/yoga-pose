@@ -61,8 +61,70 @@ To install, in terminal, run
 python3 -m pip install -r requirements.txt
 ```
 
-### Trouble-shoot for detectron2
-Problem with gcc and g++
+### Installing VideoPose3D and Detectron2
+To set up VideoPose3D and Detectron2, run the following commands from the project root:
+
+```sh
+git clone https://github.com/facebookresearch/VideoPose3D
+mkdir ./VideoPose3D/checkpoint
+mkdir ./VideoPose3D/npz
+python -m pip install git+https://github.com/facebookresearch/detectron2.git
+mkdir videos
+mkdir videos/input
+mkdir videos/output
+```
+
+NOTE: Installing Detectron2 requires you to have gcc and g++ installed. 
+
+### Running model on a CPU (Optional)
+If you don't have access to a GPU, you must change infer_video_d2.py in VideoPose3D/inference/:
+
+Make sure that you import torch, ie...
+
+```python
+...
+import torch
+import detectron2
+from detectron2.utils.logger import setup_logger
+from detectron2.config import get_cfg
+from detectron2 import model_zoo
+from detectron2.engine import DefaultPredictor
+...
+```
+
+And in the main function of infer_video_d2.py, change the following...
+
+```python
+...
+def main(args):
+
+    cfg = get_cfg()
+    cfg.merge_from_file(model_zoo.get_config_file(args.cfg))
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.7
+    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(args.cfg)
+        
+    predictor = DefaultPredictor(cfg)
+    ...
+```
+
+to...
+
+```python
+def main(args):
+
+    cfg = get_cfg()
+    cfg.merge_from_file(model_zoo.get_config_file(args.cfg))
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.7
+    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(args.cfg)
+
+    if not torch.cuda.is_available():
+        cfg.MODEL.DEVICE = 'cpu'
+        
+    predictor = DefaultPredictor(cfg)
+    ...
+```
+
+This will ensure that if this code is run on a machine without a GPU, the model will run inference on a CPU.
 
 ### Directory structure
 Below is a diagram of the directory structure of the entire project. Using this structure, create empty files with the following names, as the rest of the tutorial will be referring to these files.
@@ -497,7 +559,7 @@ except subprocess.CalledProcessError as e:
 
 Once complete, a numpy array of 3D keypoints across all frames is created and saved to a file. 
 
-The array will be of size (num_frames)x17x3, since we have a matrix of keypoints for each frame, there are 17 joints that are being detected, and we are detecting 3D coordinates, hence a 3 at the end.
+The array will be of size num_framesx17x3, since we have a matrix of keypoints for each frame, there are 17 joints that are being detected, and we are detecting 3D coordinates, hence a 3 at the end.
 
 Here is a rough diagram that I made outlining the 3D coordinates being detected in each frame, indexed by the joints 0-based index location in the array.
 
@@ -588,12 +650,6 @@ def ang_comp(reference, student, round_tensor=False):
 ...
 ```
 
-This function computes the angles between two torch tensors. From elementary linear algebra, we know that 
-
-cos_theta = dot(a,b)/|a||b|
-
-Therefore, by normalizing each tensor, |t1||t2| = 1. So, in this case cos_theta = dot(a,b), and theta = arcos(a,b).
-
 #### Creating an overlap animation
 ```python
 def overlap_animation(reference, student, error):
@@ -643,14 +699,6 @@ def overlap_animation(reference, student, error):
 
 #### Getting required angles
 
-```
-
-COME BACK TO THIS, because need to do angle_between(reference, reference) and student, student so that I can compare adjacent angles. 
-
-```python
-
-...
-```
 This function returns an animation object which overlays the student and instructor coordinates, as well as a writer to write to disk.
 
 ```python
@@ -1258,6 +1306,35 @@ const ProcessedVideos = (props) => {
 }
 
 export default ProcessedVideos;
+```
+
+## Launching the application
+Launching the app has to be done in several steps (I won't bother trying to dockerize the application in this tutorial):
+
+In yoga-pose/app/frontend/, run
+
+```sh
+npm start
+```
+
+In a separate terminal, run
+
+```sh
+redis-server
+```
+
+and ensure that you see that it is running on port 6379.
+
+Next, in a separate terminal, from yoga-pose/app/backend, run
+
+```sh
+python app.py
+```
+
+and then finally, in one more terminal, also in yoga-pose-app/backend, run
+
+```sh
+python worker.py
 ```
 
 ## What's Next 
