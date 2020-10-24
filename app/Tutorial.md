@@ -38,18 +38,18 @@ Before beginning, you need to install the following:
   <li>python3+</li>
 </ul>
 
-### Installing npm on...
+### Installing npm, python3+, and Redis on Mac
+NOTE: Ensure that you have homebrew installed!
 
-#### Mac
+```sh
 brew install node
-#### Linux
-#### Windows
+brew install python
 
-### Installing python3+ on...
-
-#### Mac
-#### Linux
-#### Windows
+wget http://download.redis.io/redis-stable.tar.gz
+tar xvzf redis-stable.tar.gz
+cd redis-stable
+make
+```
 
 ### Required python modules
 
