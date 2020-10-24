@@ -18,7 +18,6 @@ In order, this tutorial will cover
       <li>Using React routers for a single-page application</li>
       <li>How to upload videos and submit requests to the flask backend</li>
       <li>How to display processed videos to the screen</li>
-      <li>How to share videos through Facebook messenger platform</li>
     </ol>
   </li>
 </ol>
