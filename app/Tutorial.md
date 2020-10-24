@@ -53,7 +53,7 @@ brew install node
 
 ### Required python modules
 
-The requirements file for all necessary Python modules can be found in in app/backend.
+The requirements file for all necessary Python modules can be found in the root folder as requirements.txt.
 
 To install, in terminal, run
 
@@ -127,6 +127,15 @@ def main(args):
 ```
 
 This will ensure that if this code is run on a machine without a GPU, the model will run inference on a CPU.
+
+### Creating React app
+The next step is to create our React application. In the frontend folder, copy the package.json and package-lock.json files from https://github.com/DrJessop/yoga-pose/tree/staging/app/frontend, and then run
+
+```sh
+npm install
+```
+
+This will install all the node modules required for this project.
 
 ### Directory structure
 Below is a diagram of the directory structure of the entire project. Using this structure, create empty files with the following names, as the rest of the tutorial will be referring to these files.
