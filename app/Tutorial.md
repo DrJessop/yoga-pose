@@ -724,6 +724,135 @@ def error(angle_tensor, window_sz=15):
 Given the difference in error in adjacent angles, computes a rolling average across all frames to remove any anomalies. This will be used to create a heatmap to the frontend of areas where they need to improve and areas where they did well. 
 
 ## Building frontend 
+### Before getting to React...
+We will need a CSS file so that all of the styles look okay. In App.css, copy this code:
+
+```CSS
+
+.videos {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+}
+
+#feauture-slider .videos {
+  color: linear-gradient(red, blue, green);
+}
+
+.vid-text { 
+position: fixed;
+bottom: 50%;
+background: rgba(0, 0, 0, 0.4);
+color: #f1f1f1;
+width: 100%;
+padding: 20px;
+font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;;
+}
+
+.left {
+  list-style: none;
+  float: left;
+  padding-left: 5%;
+}
+
+.wld {
+  width: 10%;
+  height: 10%;
+}
+
+.right {
+  list-style: none;
+  float: right;
+  padding-right: 5%;
+  padding-top: 1%;
+}
+
+.right-text {
+  color: black;
+}
+
+.right-text:hover {
+  color: green;
+  text-decoration: none;
+}
+
+.home-instructions-header {
+  size: 5%;
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;;
+}
+
+.home-instructions-steps {
+  list-style: none;
+  margin-left: auto;
+  margin-right: auto;
+  display: inline-block;
+  padding-left: 20%;
+}
+
+.registration-form {
+  padding-top: 7%;
+  padding-left: 33%;
+  /*display: inline-block;*/
+}
+
+.registration-info {
+  max-width: 66%;
+}
+
+label {
+  margin-top: 2%;
+}
+
+input {
+  width: 50%;
+}
+
+.submit {
+  width: 20%;
+}
+
+.about {
+  padding-top: 7%;
+  margin-left: 33%;
+  margin-right: 33%;
+}
+
+.upload_instructions li {
+  padding-top: 3%;
+  text-align: center;
+  list-style-position: inside;
+  font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+}
+```
+
+Additionally, in public/index.html, copy the following:
+
+```HTML
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Web site created using create-react-app"
+    />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <title>Vinyasa</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
+```
+
 ### Overview of React and our frontend
 React is a framework that makes it easy for anyone to build an interactive user interface, and was designed for single-page application development. The "atoms" of React are called <b>components</b>, which are isolated pieces of code that allow the UI and the code logic to be loosely coupled. JSX is a markup language that allows components (code logic rendering) and UI to be merged together in a way that feels super similar to writing pure HTML. Therefore, instead of a complete separation of concerns (UI from logic), the motivation behind JSX is that "rendering logic is inherently coupled with the UI". 
 
