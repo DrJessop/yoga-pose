@@ -131,6 +131,7 @@ This will ensure that if this code is run on a machine without a GPU, the model 
 ### Directory structure
 Below is a diagram of the directory structure of the entire project. Using this structure, create empty files with the following names, as the rest of the tutorial will be referring to these files.
 
+![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/directory_structure.png?raw=true)
 
 ## Building python backend 
 ### Overview
