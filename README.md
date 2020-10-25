@@ -1455,10 +1455,14 @@ and then finally, in one more terminal, also in yoga-pose-app/backend, run
 python worker.py
 ```
 
-## What's Next 
-- Real-time application
-- Segmentation of video using yoga pose classification
-- Rotation of limbs
+## What's next for Yoga Pose
+<ul>
+  <li>It would be incredibly useful to a student to get real-time verbal feedback from the AI, not just feedback by submitting videos.</li>
+  <li>Student lag was not taken into consideration by the algorithm (student will always be a few seconds behind the instructor), and that would be useful to include to give better feedback to the student on their performance.</li>
+  <li>For every joint, VideoPose3D gives a single point describing its location, but doesn't take direction into account (whether a joint flipped around for a particular pose or not, so a new model might have to take that into consideration</li>
+  <li>Anomaly detection is also important (for example, if the instructor needs to brush hair out of their face, the student should not be penalized if they don't do the same thing</li>
+  <li>It would be useful to segment the video by sequences so that the student can easily see their performance for a particular sequence</li>
+</ul>
 
 ## References 
 <ol>
