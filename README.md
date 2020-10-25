@@ -362,6 +362,13 @@ def get_error(instructor, student):
     instructor_pose = np.load('./joints/joints-{}.npy'.format(instructor.split('.')[0]))
     student_pose    = np.load('./joints/joints-{}.npy'.format(student.split('.')[0]))
 
+    # Trim longer video to the length of the shorter video
+    min_frames = min(len(instructor_pose), len(student_pose))
+    if len(instructor_pose) > min_frames:
+        instructor_pose = instructor_pose[:min_frames]
+    if len(student_pose) > min_frames:
+        student_pose = student_pose[:min_frames]
+
     instructor_pose_tensor = torch.from_numpy(instructor_pose)
     student_pose_tensor    = torch.from_numpy(student_pose)
     
@@ -379,7 +386,6 @@ def get_error(instructor, student):
     student    = student.split('.mp4')[0]
     ani.save('./app/frontend/public/videos/{}-{}.mp4'.format(instructor, student), writer=writer)
 
-    # Create point set 'registration'
     return error
 ```
  
@@ -431,29 +437,42 @@ def get_error(instructor, student):
     ...
 ```
 
+This block of code performs 3D pose estimation for both the instructor and student.
+
 #### Creating an animation of the overlap between instructor and student, and returning the error between their poses
 ```python
     ...
     instructor_pose = np.load('./joints/joints-{}.npy'.format(instructor.split('.')[0]))
     student_pose    = np.load('./joints/joints-{}.npy'.format(student.split('.')[0]))
+    
+    # Trim longer video to the length of the shorter video
+    min_frames = min(len(instructor_pose), len(student_pose))
+    if len(instructor_pose) > min_frames:
+        instructor_pose = instructor_pose[:min_frames]
+    if len(student_pose) > min_frames:
+        student_pose = student_pose[:min_frames]
 
-    ani, writer = angles.overlap(instructor_pose, student_pose)
-    instructor = instructor.split('.mp4')[0]
-    student    = student.split('.mp4')[0]
-    ani.save('./app/frontend/public/videos/{}-{}.mp4'.format(instructor, student), writer=writer)
+    instructor_pose_tensor = torch.from_numpy(instructor_pose)
+    student_pose_tensor    = torch.from_numpy(student_pose)
     
-    instructor_pose = torch.from_numpy(instructor_pose)
-    student_pose    = torch.from_numpy(student_pose)
-    
+    animation_directory = os.getcwd()
     # Run angle comparison code
     os.chdir(cur_dir)
-    angles_between = angles.ang_comp(instructor_pose, student_pose, round_tensor=True)
+    angles_between = angles.ang_comp(instructor_pose_tensor, student_pose_tensor, round_tensor=True)
     error = angles.error(angles_between)
     logger.info('Error {}'.format(error))
 
-    # Create point set 'registration'
+    os.chdir(animation_directory)
+    # Get overlap between student and instructor
+    ani, writer = angles.overlap_animation(instructor_pose, student_pose, error)
+    instructor = instructor.split('.mp4')[0]
+    student    = student.split('.mp4')[0]
+    ani.save('./app/frontend/public/videos/{}-{}.mp4'.format(instructor, student), writer=writer)
+
     return error
 ```
+
+Once the 3D poses have been extracted, the longer of the two arrays is cropped to the size of the smaller array, and then the error calculation which we will go into more depth later is performed. Finally, an animation is created which shows the overlap between student and instructor, as well as the overall error for a particular frame (smoothed out across multiple frames).
 
 #### full_inference.py
 
@@ -573,7 +592,7 @@ Here is a rough diagram that I made outlining the 3D coordinates being detected 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/video_pose_coordinates.png?raw=true)
 
 
-### angle extraction
+### angles.py
 Now that we have the 3D keypoints across all frames, we can create a module for correcting the student's pose in reference to an instructor. This will consist of finding the angles between adjacent limbs for the instructor and student, and then getting the sum of absolute angular differences to create an error vector for a frame.
 
 Recall from linear algebra what it means to subtract two vectors:
@@ -589,6 +608,130 @@ Then, to get the cosine of the angle between two adjacent limbs, we can use the 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/cos_angle.png?raw=true)
 
 By taking the arccosine of the result, we have the angle between two adjacent limbs.
+
+Below is the entire code for this file:
+
+```python
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import scipy.signal as signal
+import numpy as np
+
+import torch
+from pycpd import RigidRegistration
+
+def ang_comp(reference, student, round_tensor=False):
+    # Get all joint pair angles, frames x number of joint pairs
+
+    adjacent_limb_map = [
+                          [[0, 1],  [1, 2], [2, 3]],     # Right leg
+                          [[0, 4],  [4, 5], [5, 6]],     # Left leg
+                          [[0, 7],  [7, 8]],             # Spine
+                          [[8, 14], [14, 15], [15, 16]], # Right arm
+                          [[8, 11], [11, 12], [12, 13]], # Left arm
+                          [[8, 9],  [9, 10]]             # Neck
+                        ]
+    
+    adjacent_limbs_ref = []
+    adjacent_limbs_stu = []
+    num_frames = len(reference)
+
+    def update_adjacent_limbs(person, adj, limb_id):
+        for adj_limb_id in range(len(adjacent_limb_map[limb_id]) - 1):
+            joint1a, joint1b = adjacent_limb_map[limb_id][adj_limb_id]
+            joint2a, joint2b = adjacent_limb_map[limb_id][adj_limb_id + 1]
+            
+            limb1_vector = person[joint1a] - person[joint1b]  # Difference vector between two joints
+            limb2_vector = person[joint2a] - person[joint2b]
+            
+            # Normalize the vectors
+            limb1_vector = torch.div(limb1_vector, torch.norm(limb1_vector)).unsqueeze(0)
+            limb2_vector = torch.div(limb2_vector, torch.norm(limb2_vector)).unsqueeze(0)
+            
+            adj.append(torch.Tensor(torch.cat([limb1_vector, limb2_vector], dim=0)).unsqueeze(0))
+
+    for idx in range(num_frames):
+        frame_reference = reference[idx]
+        frame_student   = student[idx]
+        for limb_id in range(len(adjacent_limb_map)):
+            update_adjacent_limbs(frame_reference, adjacent_limbs_ref, limb_id)
+            update_adjacent_limbs(frame_student, adjacent_limbs_stu, limb_id)
+        
+    adjacent_limbs_ref = torch.cat(adjacent_limbs_ref, dim=0)
+    adjacent_limbs_stu = torch.cat(adjacent_limbs_stu, dim=0)
+
+    # Get angles between adjacent limbs, each of the below tensors are of shape (num_frames x 10), aka scalars
+    adjacent_limbs_ref = torch.bmm(adjacent_limbs_ref[:, 0:1, :], adjacent_limbs_ref[:, 1, :].unsqueeze(-1))
+    adjacent_limbs_stu = torch.bmm(adjacent_limbs_stu[:, 0:1, :], adjacent_limbs_stu[:, 1, :].unsqueeze(-1))
+    
+    # Get absolute difference between instructor and student angles 
+    absolute_diffs = torch.abs(adjacent_limbs_ref - adjacent_limbs_stu).reshape(num_frames, 10)
+    return absolute_diffs.sum(dim=1)
+
+def overlap_animation(reference, student, error):
+
+    # Point set registration of reference and student
+    transformed_student = []
+    for idx in range(len(reference)):
+        rt = RigidRegistration(X=reference[idx], Y=student[idx])
+        rt.register()
+        rt.transform_point_cloud()
+        transformed_student.append(np.expand_dims(rt.TY, axis=0))
+
+    student = np.concatenate(transformed_student, axis=0)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    error_text = ax.text2D(1, 1, 'Error: 0', transform=ax.transAxes)
+    
+    # There are 17 joints, therefore 16 limbs
+    ref_limbs = [ax.plot3D([], [], []) for _ in range(16)]
+    stu_limbs = [ax.plot3D([], [], []) for _ in range(16)]
+        
+    limb_map = [
+                [0, 1],  [1, 2], [2, 3],     # Right leg
+                [0, 4],  [4, 5], [5, 6],     # Left leg
+                [0, 7],  [7, 8],             # Spine
+                [8, 14], [14, 15], [15, 16], # Right arm
+                [8, 11], [11, 12], [12, 13], # Left arm
+                [8, 9],  [9, 10]             # Neck
+               ]
+        
+    def update_animation(idx):
+        ref_frame = reference[idx]
+        stu_frame = student[idx]
+        
+        for i in range(len(limb_map)):
+            ref_limbs[i][0].set_data(ref_frame[limb_map[i], :2].T)
+            ref_limbs[i][0].set_3d_properties(ref_frame[limb_map[i], 2])
+            
+            stu_limbs[i][0].set_data(stu_frame[limb_map[i], :2].T)
+            stu_limbs[i][0].set_3d_properties(stu_frame[limb_map[i], 2])
+
+            if i < len(error):
+                error_text.set_text('Error: {}'.format(error[i]))
+        
+    iterations = len(reference)
+    ani = animation.FuncAnimation(fig, update_animation, iterations,
+                                  interval=50, blit=False, repeat=True)
+    Writer = animation.writers['ffmpeg']
+    writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
+
+    return ani, writer
+
+def error(angle_tensor, window_sz=15):
+
+    rolling_average = np.convolve(angle_tensor, np.ones(window_sz,)) / window_sz
+    max_error = rolling_average.max()
+    min_error = rolling_average.min()
+
+    if max_error != min_error:
+        rolling_average = (rolling_average - min_error) / (rolling_average - min_error)  # Normalize error between 0 and 1
+
+    return rolling_average
+```
+
+This code will be described in detail over the next few sections.
 
 #### Required imports
 
@@ -723,7 +866,15 @@ Finally, once we have all adjacent limbs, we can compute the angles between them
 ```python
 def overlap_animation(reference, student, error):
 
-    assert len(reference) == len(student)
+    # Point set registration of reference and student
+    transformed_student = []
+    for idx in range(len(reference)):
+        rt = RigidRegistration(X=reference[idx], Y=student[idx])
+        rt.register()
+        rt.transform_point_cloud()
+        transformed_student.append(np.expand_dims(rt.TY, axis=0))
+    
+    student = np.concatenate(transformed_student, axis=0)
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -766,7 +917,22 @@ def overlap_animation(reference, student, error):
     return ani, writer
 ```
 
-This bit of code just creates an animation with the student and instructor coordinates aligned. 
+This bit of code just creates an animation with the student and instructor coordinates aligned. I won't go into too much depth as to how this function works since it is matplotlib specific, but one important aspect to notice is this block of code:
+
+```python
+    ...
+    # Point set registration of reference and student
+    transformed_student = []
+    for idx in range(len(reference)):
+        rt = RigidRegistration(X=reference[idx], Y=student[idx])
+        rt.register()
+        rt.transform_point_cloud()
+        transformed_student.append(np.expand_dims(rt.TY, axis=0))
+    
+    student = np.concatenate(transformed_student, axis=0)
+    ...
+```
+What this portion does is something called rigid registration through an expectation maximization algorithm. In short, it finds the best possible match between the student and instructor without scaling the student coordinates or changing the angles between the student's limbs in the process. 
 
 #### Getting required angles
 
