@@ -170,7 +170,7 @@ Below is a diagram representing the architecture of the backend and its relation
 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic2.png?raw=true)
 
-We will create an endpoint that allows for a PUT request from the frontend in which the student and instructor video files will be received. RQ corresponds to a REDIS queue, where REDIS is an in-memory key-value storage system and is an excellent tool for creating job queues (serves users in a FIFO manner). This queue will receive the job on one of the available worker threads, and pose extraction will execute the series of steps as described in the overview. When the pose extraction module has finished a job, it will emit the results back to the frontend through a websocket. 
+We will create an endpoint that allows for a PUT request from the frontend in which the student and instructor video files will be received. RQ corresponds to a REDIS queue, where REDIS is an in-memory key-value storage system and is an excellent tool for creating job queues (serves users in a FIFO manner). This queue will receive the job on one of the available worker threads, and pose extraction will execute the series of steps as described in the overview. When the pose extraction module has finished a job, it will write the results to a file on disk. 
 
 #### Backend file glossary
 <ul>
@@ -226,7 +226,7 @@ if __name__ == '__main__':
 
 ### app.py
 
-Below are the top of the file and the decorators and headers for each one of the endpoints:
+Below are the imports and the decorators and headers for each one of the endpoints ('...' just corresponds to "we will fill this in"):
 
 ```python
 import os
@@ -457,7 +457,7 @@ def get_error(instructor, student):
 
 #### full_inference.py
 
-The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. There are step by step instructions in https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md on how to run VideoPose3D on a sample video, however the process needs to be automated for this app. 
+The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. This library will be doing all of the 3D pose estimation for us, and we will be using pre-trained models. There are step by step instructions in https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md on how to run VideoPose3D on a sample video, however the process needs to be automated for this app. 
 
 This script is broken into four components, in order:
 
@@ -529,7 +529,7 @@ except subprocess.CalledProcessError as e:
 ...
 ```
 
-This part of the script runs the 'infer_video_d2' script, which is a part of VideoPose3D. It takes in the input file and performs 2D keypoint detection.
+This part of the script runs the 'infer_video_d2' script, which takes in the input file and performs 2D keypoint detection.
 
 #### Dataset preparation
 ```python
@@ -543,6 +543,8 @@ except subprocess.CalledProcessError as e:
     sys.exit(1)
 ...
 ```
+
+This bit of code creates a custom dataset object that the library will use later for estimation 3D points.
 
 #### 3D pose estimation
 ```python
@@ -655,6 +657,68 @@ def ang_comp(reference, student, round_tensor=False):
 ...
 ```
 
+Given a numpy array of dimension num_frames x 17 x 3, computes the angles between all adjacent limbs for the student and instructor, and then computes the sum of absolute angular differences between them. 
+
+The adjacent limb map contains all lists of adjacent limbs. Let's examine the first sublist in this list: \[\[0, 1], \[1, 2], \[2, 3]]. Each number corresponds to a joint as displayed in figure INSERT_FIGURE_NUMBER_HERE, and an entry like \[0, 1] corresponds to the directed limb that starts at joint 0 and goes to joint 1. These lists are organized in such a way that any list of size two directly beside each other (ie. \[0, 1] and \[1, 2]) are actually adjacent limbs. Using this list, to get the vector representation of a limb, we compute the difference vector between a pair of joints just as described in figure INSERT_FIGURE_NUMBER_HERE. And then, to get adjacent limbs, we need to get the limbs corresponding to sublists that are right beside each other. 
+
+For example, in the nested function 'update_adjacent_limbs', the above paragraph corresponds to this piece of code:
+
+```python
+    def update_adjacent_limbs(person, adj, limb_id):
+        for adj_limb_id in range(len(adjacent_limb_map[limb_id]) - 1):
+            joint1a, joint1b = adjacent_limb_map[limb_id][adj_limb_id]
+            joint2a, joint2b = adjacent_limb_map[limb_id][adj_limb_id + 1]
+            
+            limb1_vector = person[joint1a] - person[joint1b]  # Difference vector between two joints
+            limb2_vector = person[joint2a] - person[joint2b]
+            ...
+```
+
+Person corresponds to a an array of dimension 17 x 3 (aka, one frame of video). 'limb_id' corresponds to the index that adjacent_limb_map is accessed by, and adj_limb_id corresponds to the sub-sub list of adjacent_limb map. Once we have the joints for each adjacent limb, we just subtract them to get the actual adjacent limb vectors. 
+
+Then, we normalize the size of each limb and append to a list:
+
+```python
+           ...
+           # Normalize the vectors
+            limb1_vector = torch.div(limb1_vector, torch.norm(limb1_vector)).unsqueeze(0)
+            limb2_vector = torch.div(limb2_vector, torch.norm(limb2_vector)).unsqueeze(0)
+            
+            adj.append(torch.Tensor(torch.cat([limb1_vector, limb2_vector], dim=0)).unsqueeze(0))
+            ...
+```
+ 
+'torch.norm', when given a vector, just returns the magnitude of the vector. By dividing a vector by its magnitude, it then has unit length. 'torch.cat' is essentially the tensor version of concatenation. Given a particular tensor dimension and a list of tensors, it concatenates the tensors across that particular dimension.
+
+The next bit of code just gets the adjacent limbs across all frames for the student and instructor:
+ 
+```python
+    ...
+    for idx in range(num_frames):
+        frame_reference = reference[idx]
+        frame_student   = student[idx]
+        for limb_id in range(len(adjacent_limb_map)):
+            update_adjacent_limbs(frame_reference, adjacent_limbs_ref, limb_id)
+            update_adjacent_limbs(frame_student, adjacent_limbs_stu, limb_id)
+   ...
+```
+
+Finally, once we have all adjacent limbs, we can compute the angles between them and get the sum of absolute angular differences between instructor and student:
+
+```python
+    ...
+    adjacent_limbs_ref = torch.cat(adjacent_limbs_ref, dim=0)
+    adjacent_limbs_stu = torch.cat(adjacent_limbs_stu, dim=0)
+    
+    # Get angles between adjacent limbs, each of the below tensors are of shape (num_frames x 10), aka scalars
+    adjacent_limbs_ref = torch.bmm(adjacent_limbs_ref[:, 0:1, :], adjacent_limbs_ref[:, 1, :].unsqueeze(-1))
+    adjacent_limbs_stu = torch.bmm(adjacent_limbs_stu[:, 0:1, :], adjacent_limbs_stu[:, 1, :].unsqueeze(-1))
+    
+    # Get absolute difference between instructor and student angles 
+    absolute_diffs = torch.abs(adjacent_limbs_ref - adjacent_limbs_stu).reshape(num_frames, 10)
+    ...
+```
+
 #### Creating an overlap animation
 ```python
 def overlap_animation(reference, student, error):
@@ -702,6 +766,8 @@ def overlap_animation(reference, student, error):
     return ani, writer
 ```
 
+This bit of code just creates an animation with the student and instructor coordinates aligned. 
+
 #### Getting required angles
 
 This function returns an animation object which overlays the student and instructor coordinates, as well as a writer to write to disk.
@@ -720,115 +786,20 @@ def error(angle_tensor, window_sz=15):
     return rolling_average
 ```
 
-Given the difference in error in adjacent angles, computes a rolling average across all frames to remove any anomalies. This will be used to create a heatmap to the frontend of areas where they need to improve and areas where they did well. 
+Given the difference in error in adjacent angles, computes a rolling average across all frames to remove any anomalies. 
 
 ## Building frontend 
 ### Before getting to React...
-We will need a CSS file so that all of the styles look okay. In App.css, copy this code:
 
-```CSS
+Ensure to copy the code contents of the following links into their respective files:
 
-.videos {
-  margin-left: auto;
-  margin-right: auto;
-  display: block;
-}
+<ul>
+  <li>https://github.com/DrJessop/yoga-pose/blob/staging/app/frontend/src/App.css into App.css</li>
+  <li>https://github.com/DrJessop/yoga-pose/blob/staging/app/frontend/src/serviceWorker.js into serviceWorker.js</li>
+</ul>
 
-#feauture-slider .videos {
-  color: linear-gradient(red, blue, green);
-}
-
-.vid-text { 
-position: fixed;
-bottom: 50%;
-background: rgba(0, 0, 0, 0.4);
-color: #f1f1f1;
-width: 100%;
-padding: 20px;
-font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;;
-}
-
-.left {
-  list-style: none;
-  float: left;
-  padding-left: 5%;
-}
-
-.wld {
-  width: 10%;
-  height: 10%;
-}
-
-.right {
-  list-style: none;
-  float: right;
-  padding-right: 5%;
-  padding-top: 1%;
-}
-
-.right-text {
-  color: black;
-}
-
-.right-text:hover {
-  color: green;
-  text-decoration: none;
-}
-
-.home-instructions-header {
-  size: 5%;
-  margin-left: auto;
-  margin-right: auto;
-  display: block;
-  font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;;
-}
-
-.home-instructions-steps {
-  list-style: none;
-  margin-left: auto;
-  margin-right: auto;
-  display: inline-block;
-  padding-left: 20%;
-}
-
-.registration-form {
-  padding-top: 7%;
-  padding-left: 33%;
-  /*display: inline-block;*/
-}
-
-.registration-info {
-  max-width: 66%;
-}
-
-label {
-  margin-top: 2%;
-}
-
-input {
-  width: 50%;
-}
-
-.submit {
-  width: 20%;
-}
-
-.about {
-  padding-top: 7%;
-  margin-left: 33%;
-  margin-right: 33%;
-}
-
-.upload_instructions li {
-  padding-top: 3%;
-  text-align: center;
-  list-style-position: inside;
-  font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
-}
-```
-
-Additionally, in public/index.html, copy the following:
-
+### The index files
+#### index.html
 ```HTML
 <!DOCTYPE html>
 <html lang="en">
@@ -852,155 +823,7 @@ Additionally, in public/index.html, copy the following:
 </html>
 ```
 
-Into serviceWorker.js, copy:
-
-```javascript
-// This optional code is used to register a service worker.
-// register() is not called by default.
-
-// This lets the app load faster on subsequent visits in production, and gives
-// it offline capabilities. However, it also means that developers (and users)
-// will only see deployed updates on subsequent visits to a page, after all the
-// existing tabs open on the page have been closed, since previously cached
-// resources are updated in the background.
-
-// To learn more about the benefits of this model and instructions on how to
-// opt-in, read https://bit.ly/CRA-PWA
-
-const isLocalhost = Boolean(
-  window.location.hostname === 'localhost' ||
-    // [::1] is the IPv6 localhost address.
-    window.location.hostname === '[::1]' ||
-    // 127.0.0.0/8 are considered localhost for IPv4.
-    window.location.hostname.match(
-      /^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/
-    )
-);
-
-export function register(config) {
-  if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
-    // The URL constructor is available in all browsers that support SW.
-    const publicUrl = new URL(process.env.PUBLIC_URL, window.location.href);
-    if (publicUrl.origin !== window.location.origin) {
-      // Our service worker won't work if PUBLIC_URL is on a different origin
-      // from what our page is served on. This might happen if a CDN is used to
-      // serve assets; see https://github.com/facebook/create-react-app/issues/2374
-      return;
-    }
-
-    window.addEventListener('load', () => {
-      const swUrl = `${process.env.PUBLIC_URL}/service-worker.js`;
-
-      if (isLocalhost) {
-        // This is running on localhost. Let's check if a service worker still exists or not.
-        checkValidServiceWorker(swUrl, config);
-
-        // Add some additional logging to localhost, pointing developers to the
-        // service worker/PWA documentation.
-        navigator.serviceWorker.ready.then(() => {
-          console.log(
-            'This web app is being served cache-first by a service ' +
-              'worker. To learn more, visit https://bit.ly/CRA-PWA'
-          );
-        });
-      } else {
-        // Is not localhost. Just register service worker
-        registerValidSW(swUrl, config);
-      }
-    });
-  }
-}
-
-function registerValidSW(swUrl, config) {
-  navigator.serviceWorker
-    .register(swUrl)
-    .then(registration => {
-      registration.onupdatefound = () => {
-        const installingWorker = registration.installing;
-        if (installingWorker == null) {
-          return;
-        }
-        installingWorker.onstatechange = () => {
-          if (installingWorker.state === 'installed') {
-            if (navigator.serviceWorker.controller) {
-              // At this point, the updated precached content has been fetched,
-              // but the previous service worker will still serve the older
-              // content until all client tabs are closed.
-              console.log(
-                'New content is available and will be used when all ' +
-                  'tabs for this page are closed. See https://bit.ly/CRA-PWA.'
-              );
-
-              // Execute callback
-              if (config && config.onUpdate) {
-                config.onUpdate(registration);
-              }
-            } else {
-              // At this point, everything has been precached.
-              // It's the perfect time to display a
-              // "Content is cached for offline use." message.
-              console.log('Content is cached for offline use.');
-
-              // Execute callback
-              if (config && config.onSuccess) {
-                config.onSuccess(registration);
-              }
-            }
-          }
-        };
-      };
-    })
-    .catch(error => {
-      console.error('Error during service worker registration:', error);
-    });
-}
-
-function checkValidServiceWorker(swUrl, config) {
-  // Check if the service worker can be found. If it can't reload the page.
-  fetch(swUrl, {
-    headers: { 'Service-Worker': 'script' },
-  })
-    .then(response => {
-      // Ensure service worker exists, and that we really are getting a JS file.
-      const contentType = response.headers.get('content-type');
-      if (
-        response.status === 404 ||
-        (contentType != null && contentType.indexOf('javascript') === -1)
-      ) {
-        // No service worker found. Probably a different app. Reload the page.
-        navigator.serviceWorker.ready.then(registration => {
-          registration.unregister().then(() => {
-            window.location.reload();
-          });
-        });
-      } else {
-        // Service worker found. Proceed as normal.
-        registerValidSW(swUrl, config);
-      }
-    })
-    .catch(() => {
-      console.log(
-        'No internet connection found. App is running in offline mode.'
-      );
-    });
-}
-
-export function unregister() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.ready
-      .then(registration => {
-        registration.unregister();
-      })
-      .catch(error => {
-        console.error(error.message);
-      });
-  }
-}
-
-```
-
-Into index.js, copy:
-
+#### index.js
 ```JSX
 import React from 'react';
 import ReactDOM from 'react-dom';
