@@ -1149,6 +1149,64 @@ The final important part of this code to examine is the final Route:
 In the same way that we can pass in attributes through props, we can also pass in methods. In this case, the updateCards method supplied to props here corresponds to a lambda function that when called triggers the App's updateCards method to be invoked. 
 
 ### Home page
+This component is what the user will first see when they land on the app. 
+
+```JSX
+import React from 'react';
+import TrackVisibility from 'react-on-screen';
+
+import HomeInstructions from './instructions/home-instructions';
+import yoga_output from '../videos/yoga_output.mp4';
+
+const HomePage = () => {
+    return (
+        <>
+            <video id='yoga-vid' className='videos' muted autoPlay loop>
+                <source src={yoga_output} type='video/mp4' />
+            </video>
+            <center><p className='vid-text'>Find your flow</p></center>
+            <TrackVisibility className='instructions'>
+                {({ isVisible }) => isVisible && <div className="animate__animated animate__fadeInUp"><HomeInstructions/></div>}
+            </TrackVisibility>
+        </>
+    )
+}
+
+export default HomePage;
+```
+
+The logic is simple. We have a background video called yoga_output which is stored in the videos directory which will play automatically and loop, and we have some cheesy line that describes the app, written as "Find your flow" which will hover across the background video. Finally, we have a simple animation where descriptive text shows up on to the screen to describe the series of steps that the user needs to perform to use the app. This is also the first time seeing a React component that is not part of a class, and thus does not need to extend Component.
+
+The video instructions are part of the next component.
+
+### home_instructions.js
+
+```JSX
+import React from 'react';
+
+const HomeInstructions = () => {
+    return (
+        <div className='home-instructions'>
+            <h2 className='home-instructions-header'><center>Only 3 steps</center></h2>
+            <ul>
+                <li className='home-instructions-steps'>
+                    Upload videos
+                </li>
+                <li className='home-instructions-steps'>
+                    Wait
+                </li>
+                <li className='home-instructions-steps'>
+                    Improve
+                </li>
+            </ul>
+        </div>
+    );
+}
+
+export default HomeInstructions;
+```
+
+This component just returns an unordered list of instructions for the user.
 
 ### UploadVid.js
 
