@@ -24,7 +24,7 @@ In order, this tutorial will cover
 </ol>
 
 <p align="center">
-  <img width="400" height="400" src="https://github.com/DrJessop/yoga-pose/blob/staging/app/images/magic.gif?raw=true">
+  <img width="400" height="400" src="https://github.com/DrJessop/yoga-pose/blob/staging/app/images/vinyasa.gif?raw=true">
 </p>
 
 This is a beginner tutorial for <b>React</b> and <b>Pytorch</b>, however there are some pre-requisites. Prior to this tutorial, you should be comfortable with:
