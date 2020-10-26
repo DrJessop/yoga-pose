@@ -49,8 +49,9 @@ def ang_comp(reference, student, round_tensor=False):
     adjacent_limbs_ref = torch.bmm(adjacent_limbs_ref[:, 0:1, :], adjacent_limbs_ref[:, 1, :].unsqueeze(-1))
     adjacent_limbs_stu = torch.bmm(adjacent_limbs_stu[:, 0:1, :], adjacent_limbs_stu[:, 1, :].unsqueeze(-1))
     
-    # Get absolute difference between instructor and student angles 
-    absolute_diffs = torch.abs(adjacent_limbs_ref - adjacent_limbs_stu).reshape(num_frames, 10)
+    # Get absolute difference between instructor and student angles in degrees 
+    # 57.296 * radians converts units to degrees
+    absolute_diffs = torch.abs((57.296*(adjacent_limbs_ref - adjacent_limbs_stu))).reshape(num_frames, 10)
     return absolute_diffs.sum(dim=1)
 
 def overlap_animation(reference, student, error):
@@ -94,7 +95,7 @@ def overlap_animation(reference, student, error):
             stu_limbs[i][0].set_3d_properties(stu_frame[limb_map[i], 2])
 
         if idx < len(error):
-            error_text.set_text('Error: {}'.format(error[idx]))
+            error_text.set_text('Error: {}'.format(int(error[idx])))
         
     iterations = len(reference)
     ani = animation.FuncAnimation(fig, update_animation, iterations,
