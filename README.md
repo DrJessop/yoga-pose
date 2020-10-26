@@ -958,6 +958,7 @@ Ensure to copy the code contents of the following links into their respective fi
 <ul>
   <li>https://github.com/DrJessop/yoga-pose/blob/staging/app/frontend/src/App.css into App.css</li>
   <li>https://github.com/DrJessop/yoga-pose/blob/staging/app/frontend/src/serviceWorker.js into serviceWorker.js</li>
+  <li>https://github.com/DrJessop/yoga-pose/blob/master/app/frontend/public/manifest.json into manifest.json</li>
 </ul>
 
 ### The index files
