@@ -17,7 +17,8 @@
     "react-router-dom": "^5.2.0",
     "react-scripts": "3.4.3",
     "react-webcam": "^5.2.0",
-    "react-wow": "^1.0.0"
+    "react-wow": "^1.0.0",
+    "react-dropzone": "11.2.1"
   },
   "scripts": {
     "start": "react-scripts start",
