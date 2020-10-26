@@ -2,14 +2,13 @@ import React, { Component } from 'react';
 import wld from './images/wld.jpeg';
 import { BrowserRouter as Router, Link, Route} from 'react-router-dom';
 import HomePage from './Components/HomePage';
-import Team from './Components/Team';
 import UploadVid from './Components/upload/UploadVid';
 import ProcessedVideos from './Components/ProcessedVideos';
 
 import 'animate.css';
 import './App.css';
 
-const ids = ['team', 'videos', 'upload'];
+const ids = ['videos', 'upload'];
 
 class App extends Component {
 
@@ -75,11 +74,6 @@ class App extends Component {
                         </Link>
                     </li>
                     <li className='right'>
-                        <Link to='/meetTheTeam' id='team' className='right-text' onClick={() => this.active_color('team')}>
-                            Meet the team
-                        </Link>
-                    </li>
-                    <li className='right'>
                         <Link to='/processed_videos' id='videos' className='right-text' onClick={() => this.active_color('videos')} >
                             Your Videos
                         </Link>
@@ -91,7 +85,6 @@ class App extends Component {
                     </li>
                 </ul>
             <Route exact path='/' component={HomePage} />
-            <Route exact path='/meetTheTeam' component={Team} />
             <Route exact path='/processed_videos' component={() => <ProcessedVideos title={this.state.title} 
                                                                                     link={this.state.link}
                                                                                     date={this.state.date}
