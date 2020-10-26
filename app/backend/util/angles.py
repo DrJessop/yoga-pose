@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import scipy.signal as signal
 import numpy as np
 
 import torch
@@ -56,16 +55,23 @@ def ang_comp(reference, student, round_tensor=False):
 
 def overlap_animation(reference, student, error):
 
-    assert len(reference) == len(student)
+    # Point set registration of reference and student
+    transformed_student = []
+    for idx in range(len(reference)):
+        rt = RigidRegistration(X=reference[idx], Y=student[idx])
+        rt.register()
+        rt.transform_point_cloud()
+        transformed_student.append(np.expand_dims(rt.TY, axis=0))
+
+    student = np.concatenate(transformed_student, axis=0)
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     error_text = ax.text2D(1, 1, 'Error: 0', transform=ax.transAxes)
-    # ax.axis('off')
     
     # There are 17 joints, therefore 16 limbs
-    ref_limbs = [ax.plot3D([], [], []) for _ in range(16)]
-    stu_limbs = [ax.plot3D([], [], []) for _ in range(16)]
+    ref_limbs = [ax.plot3D([], [], [], c='b') for _ in range(16)]
+    stu_limbs = [ax.plot3D([], [], [], c='r') for _ in range(16)]
         
     limb_map = [
                 [0, 1],  [1, 2], [2, 3],     # Right leg
@@ -87,8 +93,8 @@ def overlap_animation(reference, student, error):
             stu_limbs[i][0].set_data(stu_frame[limb_map[i], :2].T)
             stu_limbs[i][0].set_3d_properties(stu_frame[limb_map[i], 2])
 
-            if i < len(error):
-                error_text.set_text('Error: {}'.format(error[i]))
+        if idx < len(error):
+            error_text.set_text('Error: {}'.format(error[idx]))
         
     iterations = len(reference)
     ani = animation.FuncAnimation(fig, update_animation, iterations,
