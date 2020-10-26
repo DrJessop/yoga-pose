@@ -1027,7 +1027,11 @@ The frontend for this yoga app will have 6 components:
       <li>Displays the instructions that the user needs to follow to process their videos</li>
     </ul>
   </li>
-  <li><b>HomeInstructions</b></li>
+  <li><b>HomeInstructions</b>
+    <ul>
+      <li>Contains instructions to the user so they know how to use the website</li>
+    </ul>
+  </li>
   <li><b>UploadVid</b>
     <ul>
       <li>Contains two dropzones, one for uploading the student video, and one for uploading the instructor video</li>
@@ -1037,11 +1041,6 @@ The frontend for this yoga app will have 6 components:
   <li><b>ProcessedVideos</b>
     <ul>
       <li>Given an array containing video ids, titles, dates, and video paths, will render cards containing the progress of the backend for that associated card as well as the processed video when it is complete.</li>
-    </ul>
-  </li>
-  <li><b>Team</b>
-    <ul>
-      <li>A little self-plug about me and my business contact information :P</li>
     </ul>
   </li>
 </ul>
