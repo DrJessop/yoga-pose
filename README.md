@@ -152,8 +152,6 @@ In this section, you will be building a Flask API backed By VideoPose3D which wi
 
 Pose estimation refers to estimating joint key-points on a subject and connecting them together. In 3D pose estimation, the depth of the joints is also estimated (how far from the camera each joint is). Here is an example of 3D video pose estimation for a yoga clip:
 
-/* Insert GIF of yoga pose estimation here */
-
 The process that this app will use for pose estimation is simple:
 
 <ol>
@@ -487,7 +485,7 @@ This script is broken into four components, in order:
 
 <ol>
   <li>Imports, loading of files, and exception handling</li>
-  <li>2D keypoint detection using Detectron2</li>
+  <li>2D keypoint detection using Detectron2<sup><a href='#ref2'>2</a></sup></li>
   <li>Creation of dataset that will be used in 3D keypoint detection</li>
   <li>3D keypoint detection</li>
 </ol>
@@ -669,8 +667,9 @@ def ang_comp(reference, student, round_tensor=False):
     adjacent_limbs_ref = torch.bmm(adjacent_limbs_ref[:, 0:1, :], adjacent_limbs_ref[:, 1, :].unsqueeze(-1))
     adjacent_limbs_stu = torch.bmm(adjacent_limbs_stu[:, 0:1, :], adjacent_limbs_stu[:, 1, :].unsqueeze(-1))
     
-    # Get absolute difference between instructor and student angles 
-    absolute_diffs = torch.abs(adjacent_limbs_ref - adjacent_limbs_stu).reshape(num_frames, 10)
+    # Get absolute difference between instructor and student angles in degrees 
+    # 57.296 * radians converts units to degrees
+    absolute_diffs = torch.abs((57.296*(adjacent_limbs_ref - adjacent_limbs_stu))).reshape(num_frames, 10)
     return absolute_diffs.sum(dim=1)
 
 def overlap_animation(reference, student, error):
@@ -690,8 +689,8 @@ def overlap_animation(reference, student, error):
     error_text = ax.text2D(1, 1, 'Error: 0', transform=ax.transAxes)
     
     # There are 17 joints, therefore 16 limbs
-    ref_limbs = [ax.plot3D([], [], []) for _ in range(16)]
-    stu_limbs = [ax.plot3D([], [], []) for _ in range(16)]
+    ref_limbs = [ax.plot3D([], [], [], c='b') for _ in range(16)]
+    stu_limbs = [ax.plot3D([], [], [], c='r') for _ in range(16)]
         
     limb_map = [
                 [0, 1],  [1, 2], [2, 3],     # Right leg
@@ -713,8 +712,8 @@ def overlap_animation(reference, student, error):
             stu_limbs[i][0].set_data(stu_frame[limb_map[i], :2].T)
             stu_limbs[i][0].set_3d_properties(stu_frame[limb_map[i], 2])
 
-            if i < len(error):
-                error_text.set_text('Error: {}'.format(error[i]))
+        if idx < len(error):
+            error_text.set_text('Error: {}'.format(int(error[idx])))
         
     iterations = len(reference)
     ani = animation.FuncAnimation(fig, update_animation, iterations,
@@ -937,7 +936,7 @@ This bit of code just creates an animation with the student and instructor coord
     student = np.concatenate(transformed_student, axis=0)
     ...
 ```
-What this portion does is something called rigid registration through an expectation maximization algorithm. In short, it finds the best possible match between the student and instructor without scaling the student coordinates or changing the angles between the student's limbs in the process. 
+What this portion does is something called rigid registration through an expectation maximization algorithm using the pycpd library<sup><a href='#ref3'>3</a></sup>. In short, it finds the best possible match between the student and instructor without scaling the student coordinates or changing the angles between the student's limbs in the process. 
 
 #### Getting required angles
 
@@ -945,15 +944,7 @@ This function returns an animation object which overlays the student and instruc
 
 ```python
 def error(angle_tensor, window_sz=15):
-    error = angle_tensor.sum(dim=1).view(-1)
-
     rolling_average = np.convolve(error, np.ones(window_sz,)) / window_sz
-    max_error = rolling_average.max()
-    min_error = rolling_average.min()
-
-    if max_error != min_error:
-        rolling_average = (rolling_average - min_error) / (rolling_average - min_error)  # Normalize error between 0 and 1
-
     return rolling_average
 ```
 
@@ -994,6 +985,8 @@ Ensure to copy the code contents of the following links into their respective fi
 </html>
 ```
 
+This is just a basic HTML file, but there is one important thing to look at: the <div id="root"></div> section. This <div> tag is what we will render our application in, as described in the next section.
+
 #### index.js
 ```JSX
 import React from 'react';
@@ -1006,6 +999,8 @@ ReactDOM.render(<App />, document.getElementById("root"));
 
 serviceWorker.unregister();
 ```
+
+This file is responsible for rendering the application App that we will be building in the next section. 'document.getElementById("root")' looks for the HTML element that has the Id root (the div tag at the end of index.html) and will render the contents of the application in that tag.
 
 ### Overview of React and our frontend
 React is a framework that makes it easy for anyone to build an interactive user interface, and was designed for single-page application development. The "atoms" of React are called <b>components</b>, which are isolated pieces of code that allow the UI and the code logic to be loosely coupled. JSX is a markup language that allows components (code logic rendering) and UI to be merged together in a way that feels super similar to writing pure HTML. Therefore, instead of a complete separation of concerns (UI from logic), the motivation behind JSX is that "rendering logic is inherently coupled with the UI". 
@@ -1128,11 +1123,6 @@ class App extends Component {
                         </Link>
                     </li>
                     <li className='right'>
-                        <Link to='/meetTheTeam' id='team' className='right-text' onClick={() => this.active_color('team')}>
-                            Meet the team
-                        </Link>
-                    </li>
-                    <li className='right'>
                         <Link to='/processed_videos' id='videos' className='right-text' onClick={() => this.active_color('videos')} >
                             Your Videos
                         </Link>
@@ -1144,7 +1134,6 @@ class App extends Component {
                     </li>
                 </ul>
             <Route exact path='/' component={HomePage} />
-            <Route exact path='/meetTheTeam' component={Team} />
             <Route exact path='/processed_videos' component={() => <ProcessedVideos title={this.state.title} 
                                                                                     link={this.state.link}
                                                                                     date={this.state.date}
@@ -1549,8 +1538,6 @@ class MyDropzone extends Component{
 
 Just like in App.js, this class must extend Component. The state attribute contains two file attributes, f1 and f2, which are obviously null when this is rendered for the first time. Since we will have two dropzones, we need to have two different on_drop methods corresponding to which dropzone was accessed. When a file is dropped in the first dropzone, the first file of state has to change. Recall from the previous section that it's best practice and sometimes required to set the state using the setState method, so we will invoke it here.
 
-#### THIS CODE NEEDS TO BE FIXED!!!!
-
 ```JSX
   ...
   successful_upload = () => {
@@ -1694,9 +1681,9 @@ python worker.py
 
 ## References 
 <ol>
-  <li><h2 id='ref1'>Reference 1</h2></li>
-  <li><h2 id='ref2'>Reference 2</h2></li>
-  <li><h2 id='ref3'>Reference 3</h2></li>
+  <li><h2 id='ref1'><a href="https://github.com/facebookresearch/VideoPose3D">Facebook Video Pose 3D</a></h2></li>
+  <li><h2 id='ref2'><a href="https://github.com/facebookresearch/detectron2">Detectron2</a></h2></li>
+  <li><h2 id='ref3'><a href="https://github.com/siavashk/pycpd">PYCPD</a></h2></li>
 </ol>
 
 ## License
