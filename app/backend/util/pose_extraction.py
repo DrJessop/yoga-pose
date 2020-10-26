@@ -69,10 +69,4 @@ def get_error(instructor, student):
     student    = student.split('.mp4')[0]
     ani.save('./app/frontend/public/videos/{}-{}.mp4'.format(instructor, student), writer=writer)
 
-    # Create point set 'registration'
     return error
-    
-    
-
-
-
