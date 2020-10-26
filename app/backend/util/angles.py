@@ -108,10 +108,4 @@ def overlap_animation(reference, student, error):
 def error(angle_tensor, window_sz=15):
 
     rolling_average = np.convolve(angle_tensor, np.ones(window_sz,)) / window_sz
-    max_error = rolling_average.max()
-    min_error = rolling_average.min()
-
-    if max_error != min_error:
-        rolling_average = (rolling_average - min_error) / (rolling_average - min_error)  # Normalize error between 0 and 1
-
     return rolling_average
