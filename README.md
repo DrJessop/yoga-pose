@@ -1,4 +1,5 @@
-# Building a Yoga Assistant App with React, Flask, and Pytorch
+# Yoga Pose
+
 During the pandemic, a lot of fitness-related activities went fully online, including yoga. I'm sure many fellow yogis have felt the frustration of not getting feedback on their posture during this time, which was the motivation for creating this piece of software. In this tutorial, you will be building an application that helps correct yoga poses using React, Flask, and Facebook's VideoPose3D. 
 
 In order, this tutorial will cover 
@@ -18,10 +19,13 @@ In order, this tutorial will cover
       <li>Using React routers for a single-page application</li>
       <li>How to upload videos and submit requests to the flask backend</li>
       <li>How to display processed videos to the screen</li>
-      <li>How to share videos through Facebook messenger platform</li>
     </ol>
   </li>
 </ol>
+
+<p align="center">
+  <img width="400" height="400" src="https://github.com/DrJessop/yoga-pose/blob/staging/app/images/vinyasa.gif?raw=true">
+</p>
 
 This is a beginner tutorial for <b>React</b> and <b>Pytorch</b>, however there are some pre-requisites. Prior to this tutorial, you should be comfortable with:
 
@@ -38,22 +42,22 @@ Before beginning, you need to install the following:
   <li>python3+</li>
 </ul>
 
-### Installing npm on...
+### Installing npm, python3+, and Redis on Mac
+NOTE: Ensure that you have homebrew installed!
 
-#### Mac
+```sh
 brew install node
-#### Linux
-#### Windows
+brew install python
 
-### Installing python3+ on...
-
-#### Mac
-#### Linux
-#### Windows
+wget http://download.redis.io/redis-stable.tar.gz
+tar xvzf redis-stable.tar.gz
+cd redis-stable
+make
+```
 
 ### Required python modules
 
-The requirements file for all necessary Python modules can be found in in app/backend.
+The requirements file for all necessary Python modules can be found in the root folder as requirements.txt.
 
 To install, in terminal, run
 
@@ -75,6 +79,8 @@ mkdir videos/output
 ```
 
 NOTE: Installing Detectron2 requires you to have gcc and g++ installed. 
+
+Once this is successfully completed, a particular model needs to be downloaded from https://dl.fbaipublicfiles.com/video-pose-3d/pretrained_h36m_detectron_coco.bin. Once downloaded, place the file in ./VideoPose3D/checkpoint.
 
 ### Running model on a CPU (Optional)
 If you don't have access to a GPU, you must change infer_video_d2.py in VideoPose3D/inference/:
@@ -126,9 +132,19 @@ def main(args):
 
 This will ensure that if this code is run on a machine without a GPU, the model will run inference on a CPU.
 
+### Creating React app
+The next step is to create our React application. In the frontend folder, copy the package.json and package-lock.json files from https://github.com/DrJessop/yoga-pose/tree/staging/app/frontend, and then run
+
+```sh
+npm install
+```
+
+This will install all the node modules required for this project.
+
 ### Directory structure
 Below is a diagram of the directory structure of the entire project. Using this structure, create empty files with the following names, as the rest of the tutorial will be referring to these files.
 
+![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/directory_structure.png?raw=true)
 
 ## Building python backend 
 ### Overview
@@ -159,7 +175,7 @@ Below is a diagram representing the architecture of the backend and its relation
 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/backend_schematic2.png?raw=true)
 
-We will create an endpoint that allows for a PUT request from the frontend in which the student and instructor video files will be received. RQ corresponds to a REDIS queue, where REDIS is an in-memory key-value storage system and is an excellent tool for creating job queues (serves users in a FIFO manner). This queue will receive the job on one of the available worker threads, and pose extraction will execute the series of steps as described in the overview. When the pose extraction module has finished a job, it will emit the results back to the frontend through a websocket. 
+We will create an endpoint that allows for a PUT request from the frontend in which the student and instructor video files will be received. RQ corresponds to a REDIS queue, where REDIS is an in-memory key-value storage system and is an excellent tool for creating job queues (serves users in a FIFO manner). This queue will receive the job on one of the available worker threads, and pose extraction will execute the series of steps as described in the overview. When the pose extraction module has finished a job, it will write the results to a file on disk. 
 
 #### Backend file glossary
 <ul>
@@ -215,7 +231,7 @@ if __name__ == '__main__':
 
 ### app.py
 
-Below are the top of the file and the decorators and headers for each one of the endpoints:
+Below are the imports and the decorators and headers for each one of the endpoints ('...' just corresponds to "we will fill this in"):
 
 ```python
 import os
@@ -351,6 +367,13 @@ def get_error(instructor, student):
     instructor_pose = np.load('./joints/joints-{}.npy'.format(instructor.split('.')[0]))
     student_pose    = np.load('./joints/joints-{}.npy'.format(student.split('.')[0]))
 
+    # Trim longer video to the length of the shorter video
+    min_frames = min(len(instructor_pose), len(student_pose))
+    if len(instructor_pose) > min_frames:
+        instructor_pose = instructor_pose[:min_frames]
+    if len(student_pose) > min_frames:
+        student_pose = student_pose[:min_frames]
+
     instructor_pose_tensor = torch.from_numpy(instructor_pose)
     student_pose_tensor    = torch.from_numpy(student_pose)
     
@@ -368,7 +391,6 @@ def get_error(instructor, student):
     student    = student.split('.mp4')[0]
     ani.save('./app/frontend/public/videos/{}-{}.mp4'.format(instructor, student), writer=writer)
 
-    # Create point set 'registration'
     return error
 ```
  
@@ -420,39 +442,46 @@ def get_error(instructor, student):
     ...
 ```
 
+This block of code performs 3D pose estimation for both the instructor and student.
+
 #### Creating an animation of the overlap between instructor and student, and returning the error between their poses
 ```python
     ...
     instructor_pose = np.load('./joints/joints-{}.npy'.format(instructor.split('.')[0]))
     student_pose    = np.load('./joints/joints-{}.npy'.format(student.split('.')[0]))
+    
+    # Trim longer video to the length of the shorter video
+    min_frames = min(len(instructor_pose), len(student_pose))
+    if len(instructor_pose) > min_frames:
+        instructor_pose = instructor_pose[:min_frames]
+    if len(student_pose) > min_frames:
+        student_pose = student_pose[:min_frames]
 
-    ani, writer = angles.overlap(instructor_pose, student_pose)
-    instructor = instructor.split('.mp4')[0]
-    student    = student.split('.mp4')[0]
-    ani.save('./app/frontend/public/videos/{}-{}.mp4'.format(instructor, student), writer=writer)
+    instructor_pose_tensor = torch.from_numpy(instructor_pose)
+    student_pose_tensor    = torch.from_numpy(student_pose)
     
-    instructor_pose = torch.from_numpy(instructor_pose)
-    student_pose    = torch.from_numpy(student_pose)
-    
+    animation_directory = os.getcwd()
     # Run angle comparison code
     os.chdir(cur_dir)
-    angles_between = angles.ang_comp(instructor_pose, student_pose, round_tensor=True)
+    angles_between = angles.ang_comp(instructor_pose_tensor, student_pose_tensor, round_tensor=True)
     error = angles.error(angles_between)
     logger.info('Error {}'.format(error))
 
-    # Create point set 'registration'
+    os.chdir(animation_directory)
+    # Get overlap between student and instructor
+    ani, writer = angles.overlap_animation(instructor_pose, student_pose, error)
+    instructor = instructor.split('.mp4')[0]
+    student    = student.split('.mp4')[0]
+    ani.save('./app/frontend/public/videos/{}-{}.mp4'.format(instructor, student), writer=writer)
+
     return error
 ```
 
+Once the 3D poses have been extracted, the longer of the two arrays is cropped to the size of the smaller array, and then the error calculation which we will go into more depth later is performed. Finally, an animation is created which shows the overlap between student and instructor, as well as the overall error for a particular frame (smoothed out across multiple frames).
+
 #### full_inference.py
 
-The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. 
-
-/* TODO: Have full setup instructions at the very BEGINNING of the tutorial 
-There is a script in the root folder of this repository called /setup/videopose_setup.py. This script will clone the VideoPose3D repository and install Detectron2. Afterwards, the Detectron2 model will have to be downloaded (https://dl.fbaipublicfiles.com/video-pose-3d/pretrained_h36m_detectron_coco.bin) and placed into /YogaPose3D/checkpoint. 
-*/
-
-There are step by step instructions in https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md on how to run VideoPose3D on a sample video, however the process needs to be automated for this app. 
+The main workhorse for this task is the VideoPose3D library <sup><a href='#ref1'>1</a></sup>. This library will be doing all of the 3D pose estimation for us, and we will be using pre-trained models. There are step by step instructions in https://github.com/facebookresearch/VideoPose3D/blob/master/INFERENCE.md on how to run VideoPose3D on a sample video, however the process needs to be automated for this app. 
 
 This script is broken into four components, in order:
 
@@ -524,7 +553,7 @@ except subprocess.CalledProcessError as e:
 ...
 ```
 
-This part of the script runs the 'infer_video_d2' script, which is a part of VideoPose3D. It takes in the input file and performs 2D keypoint detection.
+This part of the script runs the 'infer_video_d2' script, which takes in the input file and performs 2D keypoint detection.
 
 #### Dataset preparation
 ```python
@@ -538,6 +567,8 @@ except subprocess.CalledProcessError as e:
     sys.exit(1)
 ...
 ```
+
+This bit of code creates a custom dataset object that the library will use later for estimation 3D points.
 
 #### 3D pose estimation
 ```python
@@ -566,7 +597,7 @@ Here is a rough diagram that I made outlining the 3D coordinates being detected 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/video_pose_coordinates.png?raw=true)
 
 
-### angle extraction
+### angles.py
 Now that we have the 3D keypoints across all frames, we can create a module for correcting the student's pose in reference to an instructor. This will consist of finding the angles between adjacent limbs for the instructor and student, and then getting the sum of absolute angular differences to create an error vector for a frame.
 
 Recall from linear algebra what it means to subtract two vectors:
@@ -582,6 +613,130 @@ Then, to get the cosine of the angle between two adjacent limbs, we can use the 
 ![alt text](https://github.com/DrJessop/yoga-pose/blob/staging/app/images/cos_angle.png?raw=true)
 
 By taking the arccosine of the result, we have the angle between two adjacent limbs.
+
+Below is the entire code for this file:
+
+```python
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import scipy.signal as signal
+import numpy as np
+
+import torch
+from pycpd import RigidRegistration
+
+def ang_comp(reference, student, round_tensor=False):
+    # Get all joint pair angles, frames x number of joint pairs
+
+    adjacent_limb_map = [
+                          [[0, 1],  [1, 2], [2, 3]],     # Right leg
+                          [[0, 4],  [4, 5], [5, 6]],     # Left leg
+                          [[0, 7],  [7, 8]],             # Spine
+                          [[8, 14], [14, 15], [15, 16]], # Right arm
+                          [[8, 11], [11, 12], [12, 13]], # Left arm
+                          [[8, 9],  [9, 10]]             # Neck
+                        ]
+    
+    adjacent_limbs_ref = []
+    adjacent_limbs_stu = []
+    num_frames = len(reference)
+
+    def update_adjacent_limbs(person, adj, limb_id):
+        for adj_limb_id in range(len(adjacent_limb_map[limb_id]) - 1):
+            joint1a, joint1b = adjacent_limb_map[limb_id][adj_limb_id]
+            joint2a, joint2b = adjacent_limb_map[limb_id][adj_limb_id + 1]
+            
+            limb1_vector = person[joint1a] - person[joint1b]  # Difference vector between two joints
+            limb2_vector = person[joint2a] - person[joint2b]
+            
+            # Normalize the vectors
+            limb1_vector = torch.div(limb1_vector, torch.norm(limb1_vector)).unsqueeze(0)
+            limb2_vector = torch.div(limb2_vector, torch.norm(limb2_vector)).unsqueeze(0)
+            
+            adj.append(torch.Tensor(torch.cat([limb1_vector, limb2_vector], dim=0)).unsqueeze(0))
+
+    for idx in range(num_frames):
+        frame_reference = reference[idx]
+        frame_student   = student[idx]
+        for limb_id in range(len(adjacent_limb_map)):
+            update_adjacent_limbs(frame_reference, adjacent_limbs_ref, limb_id)
+            update_adjacent_limbs(frame_student, adjacent_limbs_stu, limb_id)
+        
+    adjacent_limbs_ref = torch.cat(adjacent_limbs_ref, dim=0)
+    adjacent_limbs_stu = torch.cat(adjacent_limbs_stu, dim=0)
+
+    # Get angles between adjacent limbs, each of the below tensors are of shape (num_frames x 10), aka scalars
+    adjacent_limbs_ref = torch.bmm(adjacent_limbs_ref[:, 0:1, :], adjacent_limbs_ref[:, 1, :].unsqueeze(-1))
+    adjacent_limbs_stu = torch.bmm(adjacent_limbs_stu[:, 0:1, :], adjacent_limbs_stu[:, 1, :].unsqueeze(-1))
+    
+    # Get absolute difference between instructor and student angles 
+    absolute_diffs = torch.abs(adjacent_limbs_ref - adjacent_limbs_stu).reshape(num_frames, 10)
+    return absolute_diffs.sum(dim=1)
+
+def overlap_animation(reference, student, error):
+
+    # Point set registration of reference and student
+    transformed_student = []
+    for idx in range(len(reference)):
+        rt = RigidRegistration(X=reference[idx], Y=student[idx])
+        rt.register()
+        rt.transform_point_cloud()
+        transformed_student.append(np.expand_dims(rt.TY, axis=0))
+
+    student = np.concatenate(transformed_student, axis=0)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    error_text = ax.text2D(1, 1, 'Error: 0', transform=ax.transAxes)
+    
+    # There are 17 joints, therefore 16 limbs
+    ref_limbs = [ax.plot3D([], [], []) for _ in range(16)]
+    stu_limbs = [ax.plot3D([], [], []) for _ in range(16)]
+        
+    limb_map = [
+                [0, 1],  [1, 2], [2, 3],     # Right leg
+                [0, 4],  [4, 5], [5, 6],     # Left leg
+                [0, 7],  [7, 8],             # Spine
+                [8, 14], [14, 15], [15, 16], # Right arm
+                [8, 11], [11, 12], [12, 13], # Left arm
+                [8, 9],  [9, 10]             # Neck
+               ]
+        
+    def update_animation(idx):
+        ref_frame = reference[idx]
+        stu_frame = student[idx]
+        
+        for i in range(len(limb_map)):
+            ref_limbs[i][0].set_data(ref_frame[limb_map[i], :2].T)
+            ref_limbs[i][0].set_3d_properties(ref_frame[limb_map[i], 2])
+            
+            stu_limbs[i][0].set_data(stu_frame[limb_map[i], :2].T)
+            stu_limbs[i][0].set_3d_properties(stu_frame[limb_map[i], 2])
+
+            if i < len(error):
+                error_text.set_text('Error: {}'.format(error[i]))
+        
+    iterations = len(reference)
+    ani = animation.FuncAnimation(fig, update_animation, iterations,
+                                  interval=50, blit=False, repeat=True)
+    Writer = animation.writers['ffmpeg']
+    writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
+
+    return ani, writer
+
+def error(angle_tensor, window_sz=15):
+
+    rolling_average = np.convolve(angle_tensor, np.ones(window_sz,)) / window_sz
+    max_error = rolling_average.max()
+    min_error = rolling_average.min()
+
+    if max_error != min_error:
+        rolling_average = (rolling_average - min_error) / (rolling_average - min_error)  # Normalize error between 0 and 1
+
+    return rolling_average
+```
+
+This code will be described in detail over the next few sections.
 
 #### Required imports
 
@@ -650,11 +805,81 @@ def ang_comp(reference, student, round_tensor=False):
 ...
 ```
 
+Given a numpy array of dimension num_frames x 17 x 3, computes the angles between all adjacent limbs for the student and instructor, and then computes the sum of absolute angular differences between them. 
+
+The adjacent limb map contains all lists of adjacent limbs. Let's examine the first sublist in this list: \[\[0, 1], \[1, 2], \[2, 3]]. Each number corresponds to a joint as displayed in figure INSERT_FIGURE_NUMBER_HERE, and an entry like \[0, 1] corresponds to the directed limb that starts at joint 0 and goes to joint 1. These lists are organized in such a way that any list of size two directly beside each other (ie. \[0, 1] and \[1, 2]) are actually adjacent limbs. Using this list, to get the vector representation of a limb, we compute the difference vector between a pair of joints just as described in figure INSERT_FIGURE_NUMBER_HERE. And then, to get adjacent limbs, we need to get the limbs corresponding to sublists that are right beside each other. 
+
+For example, in the nested function 'update_adjacent_limbs', the above paragraph corresponds to this piece of code:
+
+```python
+    def update_adjacent_limbs(person, adj, limb_id):
+        for adj_limb_id in range(len(adjacent_limb_map[limb_id]) - 1):
+            joint1a, joint1b = adjacent_limb_map[limb_id][adj_limb_id]
+            joint2a, joint2b = adjacent_limb_map[limb_id][adj_limb_id + 1]
+            
+            limb1_vector = person[joint1a] - person[joint1b]  # Difference vector between two joints
+            limb2_vector = person[joint2a] - person[joint2b]
+            ...
+```
+
+Person corresponds to a an array of dimension 17 x 3 (aka, one frame of video). 'limb_id' corresponds to the index that adjacent_limb_map is accessed by, and adj_limb_id corresponds to the sub-sub list of adjacent_limb map. Once we have the joints for each adjacent limb, we just subtract them to get the actual adjacent limb vectors. 
+
+Then, we normalize the size of each limb and append to a list:
+
+```python
+           ...
+           # Normalize the vectors
+            limb1_vector = torch.div(limb1_vector, torch.norm(limb1_vector)).unsqueeze(0)
+            limb2_vector = torch.div(limb2_vector, torch.norm(limb2_vector)).unsqueeze(0)
+            
+            adj.append(torch.Tensor(torch.cat([limb1_vector, limb2_vector], dim=0)).unsqueeze(0))
+            ...
+```
+ 
+'torch.norm', when given a vector, just returns the magnitude of the vector. By dividing a vector by its magnitude, it then has unit length. 'torch.cat' is essentially the tensor version of concatenation. Given a particular tensor dimension and a list of tensors, it concatenates the tensors across that particular dimension.
+
+The next bit of code just gets the adjacent limbs across all frames for the student and instructor:
+ 
+```python
+    ...
+    for idx in range(num_frames):
+        frame_reference = reference[idx]
+        frame_student   = student[idx]
+        for limb_id in range(len(adjacent_limb_map)):
+            update_adjacent_limbs(frame_reference, adjacent_limbs_ref, limb_id)
+            update_adjacent_limbs(frame_student, adjacent_limbs_stu, limb_id)
+   ...
+```
+
+Finally, once we have all adjacent limbs, we can compute the angles between them and get the sum of absolute angular differences between instructor and student:
+
+```python
+    ...
+    adjacent_limbs_ref = torch.cat(adjacent_limbs_ref, dim=0)
+    adjacent_limbs_stu = torch.cat(adjacent_limbs_stu, dim=0)
+    
+    # Get angles between adjacent limbs, each of the below tensors are of shape (num_frames x 10), aka scalars
+    adjacent_limbs_ref = torch.bmm(adjacent_limbs_ref[:, 0:1, :], adjacent_limbs_ref[:, 1, :].unsqueeze(-1))
+    adjacent_limbs_stu = torch.bmm(adjacent_limbs_stu[:, 0:1, :], adjacent_limbs_stu[:, 1, :].unsqueeze(-1))
+    
+    # Get absolute difference between instructor and student angles 
+    absolute_diffs = torch.abs(adjacent_limbs_ref - adjacent_limbs_stu).reshape(num_frames, 10)
+    ...
+```
+
 #### Creating an overlap animation
 ```python
 def overlap_animation(reference, student, error):
 
-    assert len(reference) == len(student)
+    # Point set registration of reference and student
+    transformed_student = []
+    for idx in range(len(reference)):
+        rt = RigidRegistration(X=reference[idx], Y=student[idx])
+        rt.register()
+        rt.transform_point_cloud()
+        transformed_student.append(np.expand_dims(rt.TY, axis=0))
+    
+    student = np.concatenate(transformed_student, axis=0)
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -697,6 +922,23 @@ def overlap_animation(reference, student, error):
     return ani, writer
 ```
 
+This bit of code just creates an animation with the student and instructor coordinates aligned. I won't go into too much depth as to how this function works since it is matplotlib specific, but one important aspect to notice is this block of code:
+
+```python
+    ...
+    # Point set registration of reference and student
+    transformed_student = []
+    for idx in range(len(reference)):
+        rt = RigidRegistration(X=reference[idx], Y=student[idx])
+        rt.register()
+        rt.transform_point_cloud()
+        transformed_student.append(np.expand_dims(rt.TY, axis=0))
+    
+    student = np.concatenate(transformed_student, axis=0)
+    ...
+```
+What this portion does is something called rigid registration through an expectation maximization algorithm. In short, it finds the best possible match between the student and instructor without scaling the student coordinates or changing the angles between the student's limbs in the process. 
+
 #### Getting required angles
 
 This function returns an animation object which overlays the student and instructor coordinates, as well as a writer to write to disk.
@@ -715,9 +957,56 @@ def error(angle_tensor, window_sz=15):
     return rolling_average
 ```
 
-Given the difference in error in adjacent angles, computes a rolling average across all frames to remove any anomalies. This will be used to create a heatmap to the frontend of areas where they need to improve and areas where they did well. 
+Given the difference in error in adjacent angles, computes a rolling average across all frames to remove any anomalies. 
 
 ## Building frontend 
+### Before getting to React...
+
+Ensure to copy the code contents of the following links into their respective files:
+
+<ul>
+  <li>https://github.com/DrJessop/yoga-pose/blob/staging/app/frontend/src/App.css into App.css</li>
+  <li>https://github.com/DrJessop/yoga-pose/blob/staging/app/frontend/src/serviceWorker.js into serviceWorker.js</li>
+</ul>
+
+### The index files
+#### index.html
+```HTML
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Web site created using create-react-app"
+    />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <title>Vinyasa</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
+```
+
+#### index.js
+```JSX
+import React from 'react';
+import ReactDOM from 'react-dom';
+import './index.css';
+import App from './App';
+import * as serviceWorker from './serviceWorker';
+
+ReactDOM.render(<App />, document.getElementById("root"));
+
+serviceWorker.unregister();
+```
+
 ### Overview of React and our frontend
 React is a framework that makes it easy for anyone to build an interactive user interface, and was designed for single-page application development. The "atoms" of React are called <b>components</b>, which are isolated pieces of code that allow the UI and the code logic to be loosely coupled. JSX is a markup language that allows components (code logic rendering) and UI to be merged together in a way that feels super similar to writing pure HTML. Therefore, instead of a complete separation of concerns (UI from logic), the motivation behind JSX is that "rendering logic is inherently coupled with the UI". 
 
@@ -1031,6 +1320,64 @@ The final important part of this code to examine is the final Route:
 In the same way that we can pass in attributes through props, we can also pass in methods. In this case, the updateCards method supplied to props here corresponds to a lambda function that when called triggers the App's updateCards method to be invoked. 
 
 ### Home page
+This component is what the user will first see when they land on the app. 
+
+```JSX
+import React from 'react';
+import TrackVisibility from 'react-on-screen';
+
+import HomeInstructions from './instructions/home-instructions';
+import yoga_output from '../videos/yoga_output.mp4';
+
+const HomePage = () => {
+    return (
+        <>
+            <video id='yoga-vid' className='videos' muted autoPlay loop>
+                <source src={yoga_output} type='video/mp4' />
+            </video>
+            <center><p className='vid-text'>Find your flow</p></center>
+            <TrackVisibility className='instructions'>
+                {({ isVisible }) => isVisible && <div className="animate__animated animate__fadeInUp"><HomeInstructions/></div>}
+            </TrackVisibility>
+        </>
+    )
+}
+
+export default HomePage;
+```
+
+The logic is simple. We have a background video called yoga_output which is stored in the videos directory which will play automatically and loop, and we have some cheesy line that describes the app, written as "Find your flow" which will hover across the background video. Finally, we have a simple animation where descriptive text shows up on to the screen to describe the series of steps that the user needs to perform to use the app. This is also the first time seeing a React component that is not part of a class, and thus does not need to extend Component.
+
+The video instructions are part of the next component.
+
+### home_instructions.js
+
+```JSX
+import React from 'react';
+
+const HomeInstructions = () => {
+    return (
+        <div className='home-instructions'>
+            <h2 className='home-instructions-header'><center>Only 3 steps</center></h2>
+            <ul>
+                <li className='home-instructions-steps'>
+                    Upload videos
+                </li>
+                <li className='home-instructions-steps'>
+                    Wait
+                </li>
+                <li className='home-instructions-steps'>
+                    Improve
+                </li>
+            </ul>
+        </div>
+    );
+}
+
+export default HomeInstructions;
+```
+
+This component just returns an unordered list of instructions for the user.
 
 ### UploadVid.js
 
@@ -1337,10 +1684,14 @@ and then finally, in one more terminal, also in yoga-pose-app/backend, run
 python worker.py
 ```
 
-## What's Next 
-- Real-time application
-- Segmentation of video using yoga pose classification
-- Rotation of limbs
+## What's next for Yoga Pose
+<ul>
+  <li>It would be incredibly useful to a student to get real-time verbal feedback from the AI, not just feedback by submitting videos.</li>
+  <li>Student lag was not taken into consideration by the algorithm (student will always be a few seconds behind the instructor), and that would be useful to include to give better feedback to the student on their performance.</li>
+  <li>For every joint, VideoPose3D gives a single point describing its location, but doesn't take direction into account (whether a joint flipped around for a particular pose or not, so a new model might have to take that into consideration</li>
+  <li>Anomaly detection is also important (for example, if the instructor needs to brush hair out of their face, the student should not be penalized if they don't do the same thing</li>
+  <li>It would be useful to segment the video by sequences so that the student can easily see their performance for a particular sequence</li>
+</ul>
 
 ## References 
 <ol>
@@ -1349,5 +1700,15 @@ python worker.py
   <li><h2 id='ref3'>Reference 3</h2></li>
 </ol>
 
+## License
+The MIT License (MIT)
+
+Copyright (c) 2020 Andrew Grebenisan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
